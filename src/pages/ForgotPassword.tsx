@@ -4,15 +4,32 @@ import { ArrowLeft, Mail, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
+import { supabase } from "@/lib/supabaseClient";
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email) return;
+
+    setLoading(true);
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) {
+      toast.error("Error al enviar el correo. Intentá de nuevo.");
+      setLoading(false);
+      return;
+    }
+
     setSent(true);
+    setLoading(false);
   };
 
   return (
@@ -44,11 +61,12 @@ const ForgotPassword = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="h-12 pl-10"
+                    disabled={loading}
                   />
                 </div>
               </div>
-              <Button type="submit" className="h-12 w-full text-base font-semibold">
-                Enviar enlace
+              <Button type="submit" disabled={loading} className="h-12 w-full text-base font-semibold">
+                {loading ? "Enviando..." : "Enviar enlace"}
               </Button>
             </form>
           ) : (
