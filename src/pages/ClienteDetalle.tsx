@@ -3,7 +3,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, MapPin, Phone, Building2, FileText, Calendar,
   Plus, Car, PhoneCall, Mail, CheckCircle2, Clock, Loader2,
-  ChevronDown, ChevronUp, User, UserCheck, Pencil
+  ChevronDown, ChevronUp, User, UserCheck, Pencil, MessageCircle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,9 +60,11 @@ interface HistorialInstancia {
 }
 
 const TIPOS_GESTION = [
-  { key: "visita", label: "Visita", icon: Car, color: "bg-blue-100 text-blue-700" },
-  { key: "llamada", label: "Llamada", icon: PhoneCall, color: "bg-green-100 text-green-700" },
-  { key: "mail", label: "Mail", icon: Mail, color: "bg-purple-100 text-purple-700" },
+  { key: "visita",    label: "Visita",     icon: Car,       color: "bg-blue-100 text-blue-700" },
+  { key: "llamada",   label: "Llamada",    icon: PhoneCall, color: "bg-green-100 text-green-700" },
+  { key: "email",     label: "Email",      icon: Mail,      color: "bg-purple-100 text-purple-700" },
+  { key: "whatsapp",  label: "WhatsApp",   icon: MessageCircle, color: "bg-emerald-100 text-emerald-700" },
+  { key: "otro",      label: "Otro",       icon: FileText,      color: "bg-gray-100 text-gray-700" },
 ];
 
 const RESULTADOS = [

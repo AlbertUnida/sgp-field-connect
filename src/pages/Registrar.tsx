@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, MapPin, Phone, Car, Save, Calendar, Mail, Search, X, Loader2 } from "lucide-react";
+import { Camera, MapPin, Phone, Car, Save, Calendar, Mail, Search, X, Loader2, MessageCircle, FileText } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,9 +19,11 @@ interface ClienteOpcion {
 }
 
 const TIPOS = [
-  { key: "visita", label: "Visita", icon: Car },
-  { key: "llamada", label: "Llamada", icon: Phone },
-  { key: "mail", label: "Mail", icon: Mail },
+  { key: "visita",   label: "Visita",    icon: Car },
+  { key: "llamada",  label: "Llamada",   icon: Phone },
+  { key: "email",    label: "Email",     icon: Mail },
+  { key: "whatsapp", label: "WhatsApp",  icon: MessageCircle },
+  { key: "otro",     label: "Otro",      icon: FileText },
 ];
 
 const RESULTADOS = [
@@ -159,7 +161,7 @@ const Registrar = () => {
       <div className="space-y-5 px-4 pt-5 pb-8">
 
         {/* Tipo de gestión */}
-        <div className="grid grid-cols-3 gap-2 rounded-2xl border border-border bg-card p-1.5 shadow-card">
+        <div className="grid grid-cols-5 gap-1.5 rounded-2xl border border-border bg-card p-1.5 shadow-card">
           {TIPOS.map((t) => (
             <button
               key={t.key}
