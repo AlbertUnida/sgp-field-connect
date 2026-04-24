@@ -66,11 +66,13 @@ const TIPOS_GESTION = [
 ];
 
 const RESULTADOS = [
-  { key: "exitosa", label: "✅ Exitosa" },
-  { key: "interesado", label: "🤔 Interesado" },
-  { key: "reagendada", label: "🔁 Reagendada" },
-  { key: "sin_respuesta", label: "❌ Sin respuesta" },
-  { key: "cerrada", label: "🎯 Cerrada / Firmada" },
+  { key: "atendido",     label: "✅ Atendido" },
+  { key: "comprometido", label: "🤝 Comprometido" },
+  { key: "proxima_cita", label: "📅 Próxima cita" },
+  { key: "no_atendido",  label: "📵 No atendido" },
+  { key: "rechazo",      label: "❌ Rechazo" },
+  { key: "pago",         label: "💰 Pagó" },
+  { key: "sin_resultado",label: "➖ Sin resultado" },
 ];
 
 const INSTANCIA_COLORS: Record<string, string> = {
