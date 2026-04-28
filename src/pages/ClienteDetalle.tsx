@@ -3,7 +3,8 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import {
   ArrowLeft, MapPin, Phone, Building2, FileText, Calendar,
   Plus, Car, PhoneCall, Mail, CheckCircle2, Clock, Loader2,
-  ChevronDown, ChevronUp, User, UserCheck, Pencil, MessageCircle
+  ChevronDown, ChevronUp, User, UserCheck, Pencil, MessageCircle,
+  AlertTriangle, RotateCcw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,8 @@ interface Cliente {
   tipo_cliente: string | null;
   categoria: { nombre: string } | null;
   rubro_rel: { nombre: string } | null;
+  sub_rubro_id: string | null;
+  fecha_vencimiento: string | null;
   created_at: string | null;
 }
 
@@ -48,6 +51,7 @@ interface Gestion {
   nota: string | null;
   fecha_inicio: string | null;
   created_at: string;
+  foto_url: string | null;
   ejecutivo: { nombre: string; apellido: string } | null;
 }
 
@@ -93,10 +97,11 @@ interface EjecutivoOpcion {
 const ClienteDetalle = () => {
   const { id } = useParams();
   const { user } = useAuth();
-  const { isAdmin } = useProfile();
+  const { isAdmin, canManage } = useProfile();
   const navigate = useNavigate();
 
   const [cliente, setCliente] = useState<Cliente | null>(null);
+  const [subRubroNombre, setSubRubroNombre] = useState<string | null>(null);
   const [gestiones, setGestiones] = useState<Gestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -121,6 +126,19 @@ const ClienteDetalle = () => {
   });
   const setCob = (key: string, val: string) => setCobro((p) => ({ ...p, [key]: val }));
 
+  // Renovar licencia (COBRANZAS → COMERCIAL)
+  const [renovando, setRenovando] = useState(false);
+
+  // Escalación a JURÍDICO
+  const [showJuridico, setShowJuridico] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [escalando, setEscalando] = useState(false);
+
+  // Recuperar desde JURÍDICO (volver a COMERCIAL)
+  const [showRecuperar, setShowRecuperar] = useState(false);
+  const [motivoRecuperar, setMotivoRecuperar] = useState("");
+  const [recuperando, setRecuperando] = useState(false);
+
   // Asignación de ejecutivo (solo admin)
   const [ejecutivos, setEjecutivos] = useState<EjecutivoOpcion[]>([]);
   const [ejecutivoSeleccionado, setEjecutivoSeleccionado] = useState("");
@@ -143,7 +161,7 @@ const ClienteDetalle = () => {
   }, [id]);
 
   useEffect(() => {
-    if (!isAdmin) return;
+    if (!canManage) return;
     supabase
       .from("profiles")
       .select("id, nombre, apellido")
@@ -170,6 +188,19 @@ const ClienteDetalle = () => {
       return;
     }
     setCliente(data);
+
+    // Sub rubro — carga separada para no romper la query principal
+    if (data.sub_rubro_id) {
+      supabase
+        .from("sub_rubros")
+        .select("nombre")
+        .eq("id", data.sub_rubro_id)
+        .single()
+        .then(({ data: sr }) => setSubRubroNombre(sr?.nombre ?? null));
+    } else {
+      setSubRubroNombre(null);
+    }
+
     setLoading(false);
   };
 
@@ -186,7 +217,7 @@ const ClienteDetalle = () => {
     const { data } = await supabase
       .from("gestiones")
       .select(`
-        id, tipo, resultado, nota, fecha_inicio, created_at,
+        id, tipo, resultado, nota, fecha_inicio, created_at, foto_url,
         ejecutivo:ejecutivo_id(nombre, apellido)
       `)
       .eq("cliente_id", id)
@@ -261,9 +292,22 @@ const ClienteDetalle = () => {
       return;
     }
 
-    // Mover cliente a COBRANZAS
+    // Calcular fecha_vencimiento según días de vigencia del rubro
+    const { data: rubroInfo } = await supabase
+      .from("clientes")
+      .select("rubro_rel:rubro_id(dias_vigencia)")
+      .eq("id", id)
+      .single();
+    const diasVigencia = (rubroInfo?.rubro_rel as any)?.dias_vigencia ?? 30;
+    const fechaBase = new Date(cobro.fecha_cobro);
+    fechaBase.setDate(fechaBase.getDate() + diasVigencia);
+    const fechaVencimiento = fechaBase.toISOString().split("T")[0];
+
+    // Mover cliente a COBRANZAS y guardar vencimiento
     const instanciaAnterior = cliente!.instancia ?? "COMERCIAL";
-    await supabase.from("clientes").update({ instancia: "COBRANZAS" }).eq("id", id);
+    await supabase.from("clientes")
+      .update({ instancia: "COBRANZAS", fecha_vencimiento: fechaVencimiento })
+      .eq("id", id);
 
     // Registrar transición en historial
     await supabase.from("historial_instancias").insert({
@@ -281,6 +325,96 @@ const ClienteDetalle = () => {
     await cargarCliente();
     await cargarHistorial();
     setGuardandoCobro(false);
+  };
+
+  const renovarLicencia = async () => {
+    setRenovando(true);
+
+    const { error } = await supabase.from("clientes")
+      .update({ instancia: "COMERCIAL" })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Error al renovar: " + error.message);
+      setRenovando(false);
+      return;
+    }
+
+    await supabase.from("historial_instancias").insert({
+      cliente_id: parseInt(id!),
+      instancia_anterior: "COBRANZAS",
+      instancia_nueva: "COMERCIAL",
+      ejecutivo_id: user!.id,
+      notas: "Renovación de licencia — vuelve a gestión comercial",
+    });
+
+    toast.success("Licencia en renovación — cliente pasa a COMERCIAL 🔄");
+    await cargarCliente();
+    await cargarHistorial();
+    setRenovando(false);
+  };
+
+  const escalarJuridico = async () => {
+    if (!motivo.trim()) { toast.error("Ingresá el motivo de la escalación"); return; }
+
+    setEscalando(true);
+    const instanciaAnterior = cliente!.instancia ?? "COBRANZAS";
+
+    const { error } = await supabase.from("clientes")
+      .update({ instancia: "JURIDICO" })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Error al escalar: " + error.message);
+      setEscalando(false);
+      return;
+    }
+
+    await supabase.from("historial_instancias").insert({
+      cliente_id: parseInt(id!),
+      instancia_anterior: instanciaAnterior,
+      instancia_nueva: "JURIDICO",
+      ejecutivo_id: user!.id,
+      notas: motivo.trim(),
+    });
+
+    toast.success("Cliente escalado a JURÍDICO");
+    setMotivo("");
+    setShowJuridico(false);
+    await cargarCliente();
+    await cargarHistorial();
+    setEscalando(false);
+  };
+
+  const recuperarCliente = async () => {
+    if (!motivoRecuperar.trim()) { toast.error("Ingresá una observación para la recuperación"); return; }
+
+    setRecuperando(true);
+
+    const { error } = await supabase.from("clientes")
+      .update({ instancia: "COMERCIAL" })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Error al recuperar: " + error.message);
+      setRecuperando(false);
+      return;
+    }
+
+    await supabase.from("historial_instancias").insert({
+      cliente_id: parseInt(id!),
+      instancia_anterior: "JURIDICO",
+      instancia_nueva: "COMERCIAL",
+      ejecutivo_id: user!.id,
+      notas: motivoRecuperar.trim(),
+    });
+
+    toast.success("Cliente recuperado — vuelve a COMERCIAL ✅");
+    setMotivoRecuperar("");
+    setShowRecuperar(false);
+    await cargarCliente();
+    await cargarHistorial();
+    setRecuperando(false);
   };
 
   const registrarActividad = async () => {
@@ -340,7 +474,7 @@ const ClienteDetalle = () => {
             <Link to="/app/clientes" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10">
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            {(isAdmin || esPropio) && (
+            {(canManage || esPropio) && (
               <Link
                 to={`/app/clientes/${id}/editar`}
                 className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-2 text-[11px] font-bold uppercase tracking-wide hover:bg-white/20 transition-smooth"
@@ -353,7 +487,9 @@ const ClienteDetalle = () => {
           <div className="mt-3">
             {(cliente.categoria as any)?.nombre && (
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent">
-                {(cliente.categoria as any).nombre} · {(cliente.rubro_rel as any)?.nombre}
+                {(cliente.categoria as any).nombre}
+                {(cliente.rubro_rel as any)?.nombre && ` · ${(cliente.rubro_rel as any).nombre}`}
+                {subRubroNombre && ` · ${subRubroNombre}`}
               </p>
             )}
             <h1 className="mt-1 text-xl font-bold leading-tight">{cliente.nombre_comercial}</h1>
@@ -400,6 +536,20 @@ const ClienteDetalle = () => {
           {cliente.tarifa_mensual && (
             <InfoRow icon={<Building2 className="h-4 w-4" />} label="Tarifa mensual" value={formatPYG(cliente.tarifa_mensual)} valueClass="font-bold text-primary" />
           )}
+          {cliente.fecha_vencimiento && (
+            <InfoRow
+              icon={<Clock className="h-4 w-4" />}
+              label="Vencimiento licencia"
+              value={new Date(cliente.fecha_vencimiento + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "long", year: "numeric" })}
+              valueClass={
+                new Date(cliente.fecha_vencimiento) < new Date()
+                  ? "font-bold text-destructive"
+                  : new Date(cliente.fecha_vencimiento) <= new Date(Date.now() + 7 * 86_400_000)
+                  ? "font-bold text-warning"
+                  : "font-semibold text-success"
+              }
+            />
+          )}
           {cliente.created_at && (
             <InfoRow
               icon={<Calendar className="h-4 w-4" />}
@@ -409,8 +559,8 @@ const ClienteDetalle = () => {
           )}
         </section>
 
-        {/* Asignación de ejecutivo — solo admin, cuando el cliente no tiene ejecutivo asignado */}
-        {isAdmin && !cliente.ejecutivo_id && (
+        {/* Asignación de ejecutivo — admin y supervisor, cuando el cliente no tiene ejecutivo asignado */}
+        {canManage && !cliente.ejecutivo_id && (
           <section className="rounded-2xl border border-warning/40 bg-warning/5 p-4 space-y-3">
             <div className="flex items-center gap-2">
               <UserCheck className="h-4 w-4 text-warning" />
@@ -451,8 +601,8 @@ const ClienteDetalle = () => {
           </section>
         )}
 
-        {/* Re-asignar ejecutivo — admin puede reasignar en cualquier momento */}
-        {isAdmin && cliente.ejecutivo_id && (
+        {/* Re-asignar ejecutivo — admin y supervisor pueden reasignar en cualquier momento */}
+        {canManage && cliente.ejecutivo_id && (
           <section className="rounded-2xl border border-border bg-card p-4 space-y-3">
             <div className="flex items-center gap-2">
               <UserCheck className="h-4 w-4 text-muted-foreground" />
@@ -484,7 +634,7 @@ const ClienteDetalle = () => {
         )}
 
         {/* Registrar cobro — solo cuando está en COMERCIAL */}
-        {(esPropio || isAdmin) && instancia === "COMERCIAL" && (
+        {(esPropio || canManage) && instancia === "COMERCIAL" && (
           <section>
             <Button
               onClick={() => { setShowCobro((v) => !v); setShowForm(false); }}
@@ -617,6 +767,127 @@ const ClienteDetalle = () => {
                 >
                   {guardandoCobro ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                   {guardandoCobro ? "Registrando..." : "Confirmar cobro"}
+                </Button>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Renovar licencia — disponible cuando el cliente está en COBRANZAS */}
+        {(esPropio || canManage) && instancia === "COBRANZAS" && (
+          <section>
+            <Button
+              onClick={renovarLicencia}
+              disabled={renovando}
+              variant="outline"
+              className="w-full gap-2 border-primary/40 text-primary font-semibold hover:bg-primary/5 hover:border-primary"
+            >
+              {renovando ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+              {renovando ? "Procesando..." : "🔄 Renovar licencia"}
+            </Button>
+            <p className="mt-1.5 text-center text-[11px] text-muted-foreground">
+              El cliente vuelve a <strong>COMERCIAL</strong> para gestionar la renovación del período.
+            </p>
+          </section>
+        )}
+
+        {/* Enviar a JURÍDICO — disponible desde COMERCIAL o COBRANZAS */}
+        {(esPropio || canManage) && (instancia === "COMERCIAL" || instancia === "COBRANZAS") && (
+          <section>
+            <Button
+              onClick={() => { setShowJuridico((v) => !v); setShowRecuperar(false); }}
+              variant={showJuridico ? "outline" : "ghost"}
+              className={cn(
+                "w-full gap-2 border font-semibold",
+                showJuridico
+                  ? "border-destructive/40 text-destructive hover:bg-destructive/5"
+                  : "border-destructive/30 text-destructive hover:bg-destructive/5 hover:border-destructive/60"
+              )}
+            >
+              {showJuridico ? <ChevronUp className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
+              {showJuridico ? "Cancelar" : "⚠️ Enviar a Jurídico"}
+            </Button>
+
+            {showJuridico && (
+              <div className="mt-3 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 space-y-4">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                  <p className="text-sm font-bold text-destructive">Enviar a Jurídico</p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  El cliente pasará a instancia <strong>JURÍDICO</strong>. Esta acción queda registrada en el historial.
+                  Indicá el motivo de la escalación.
+                </p>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Motivo <span className="text-destructive">*</span>
+                  </Label>
+                  <Textarea
+                    placeholder="Ej: Cliente no responde a gestiones repetidas, deuda acumulada de 3 meses..."
+                    value={motivo}
+                    onChange={(e) => setMotivo(e.target.value)}
+                    rows={3}
+                    className="resize-none"
+                  />
+                </div>
+                <Button
+                  onClick={escalarJuridico}
+                  disabled={escalando || !motivo.trim()}
+                  className="w-full h-11 gap-2 font-semibold bg-destructive hover:bg-destructive/90 text-white border-0"
+                >
+                  {escalando ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4" />}
+                  {escalando ? "Enviando..." : "Confirmar envío a Jurídico"}
+                </Button>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Recuperar desde JURÍDICO — volver a COMERCIAL */}
+        {(esPropio || canManage) && instancia === "JURIDICO" && (
+          <section>
+            <Button
+              onClick={() => setShowRecuperar((v) => !v)}
+              variant="ghost"
+              className={cn(
+                "w-full gap-2 border font-semibold",
+                showRecuperar
+                  ? "border-primary/40 text-primary hover:bg-primary/5"
+                  : "border-primary/30 text-primary hover:bg-primary/5 hover:border-primary/60"
+              )}
+            >
+              {showRecuperar ? <ChevronUp className="h-4 w-4" /> : <RotateCcw className="h-4 w-4" />}
+              {showRecuperar ? "Cancelar" : "🔄 Recuperar cliente"}
+            </Button>
+
+            {showRecuperar && (
+              <div className="mt-3 rounded-2xl border border-primary/30 bg-primary/5 p-4 space-y-4">
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="h-4 w-4 text-primary" />
+                  <p className="text-sm font-bold text-primary">Recuperar desde Jurídico</p>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  El cliente volverá a instancia <strong>COMERCIAL</strong> para continuar la gestión normal.
+                </p>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Observación <span className="text-destructive">*</span>
+                  </Label>
+                  <Textarea
+                    placeholder="Ej: Cliente regularizó situación, acuerdo de pago firmado..."
+                    value={motivoRecuperar}
+                    onChange={(e) => setMotivoRecuperar(e.target.value)}
+                    rows={3}
+                    className="resize-none"
+                  />
+                </div>
+                <Button
+                  onClick={recuperarCliente}
+                  disabled={recuperando || !motivoRecuperar.trim()}
+                  className="w-full h-11 gap-2 font-semibold"
+                >
+                  {recuperando ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                  {recuperando ? "Procesando..." : "Confirmar recuperación"}
                 </Button>
               </div>
             )}
@@ -805,6 +1076,20 @@ const ClienteDetalle = () => {
 
                     {g.nota && <p className="mt-2.5 text-sm">{g.nota}</p>}
 
+                    {g.foto_url && (
+                      <a href={g.foto_url} target="_blank" rel="noopener noreferrer" className="mt-2.5 block">
+                        <img
+                          src={g.foto_url}
+                          alt="Evidencia de visita"
+                          className="w-full rounded-xl object-cover border border-border"
+                          style={{ maxHeight: 200 }}
+                        />
+                        <span className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <Camera className="h-3 w-3" /> Ver foto completa
+                        </span>
+                      </a>
+                    )}
+
                     <div className="mt-2.5 flex items-center justify-between text-[11px]">
                       {resultadoInfo && (
                         <span className="font-semibold">{resultadoInfo.label}</span>
@@ -814,10 +1099,10 @@ const ClienteDetalle = () => {
                       </span>
                     </div>
 
-                    {g.proxima_accion && (
+                    {(g as any).proxima_accion && (
                       <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning">
                         <Calendar className="h-3 w-3" />
-                        Próxima acción: {new Date(g.proxima_accion).toLocaleDateString("es-PY", { day: "2-digit", month: "short" })}
+                        Próxima acción: {new Date((g as any).proxima_accion).toLocaleDateString("es-PY", { day: "2-digit", month: "short" })}
                       </div>
                     )}
                   </div>

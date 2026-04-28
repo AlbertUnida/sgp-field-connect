@@ -13,18 +13,21 @@ import { toast } from "sonner";
 
 interface Categoria { id: string; nombre: string; }
 interface Rubro { id: string; categoria_id: string; nombre: string; }
+interface SubRubro { id: string; rubro_id: string; nombre: string; }
 
 const EditarCliente = () => {
   const { id } = useParams();
   const { user } = useAuth();
-  const { isAdmin, loading: profileLoading } = useProfile();
+  const { isAdmin, canManage, loading: profileLoading } = useProfile();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [rubros, setRubros] = useState<Rubro[]>([]);
+  const [subRubros, setSubRubros] = useState<SubRubro[]>([]);
   const [rubrosFiltrados, setRubrosFiltrados] = useState<Rubro[]>([]);
+  const [subRubrosFiltrados, setSubRubrosFiltrados] = useState<SubRubro[]>([]);
 
   const [form, setForm] = useState({
     nombre_comercial: "",
@@ -41,6 +44,7 @@ const EditarCliente = () => {
     notas: "",
     categoria_id: "",
     rubro_id: "",
+    sub_rubro_id: "",
   });
 
   const set = (key: string, val: string) => setForm((p) => ({ ...p, [key]: val }));
@@ -50,10 +54,12 @@ const EditarCliente = () => {
     Promise.all([
       supabase.from("categorias").select("*").order("nombre"),
       supabase.from("rubros").select("*").order("nombre"),
+      supabase.from("sub_rubros").select("*").order("nombre"),
       supabase.from("clientes").select("*").eq("id", id).single(),
-    ]).then(([{ data: cats }, { data: rubs }, { data: cliente, error }]) => {
+    ]).then(([{ data: cats }, { data: rubs }, { data: subRubs }, { data: cliente, error }]) => {
       setCategorias(cats ?? []);
       setRubros(rubs ?? []);
+      setSubRubros(subRubs ?? []);
 
       if (error || !cliente) {
         toast.error("Cliente no encontrado");
@@ -61,8 +67,8 @@ const EditarCliente = () => {
         return;
       }
 
-      // Verificar permiso: solo el ejecutivo asignado o admin puede editar
-      if (!isAdmin && cliente.ejecutivo_id !== user?.id) {
+      // Verificar permiso: ejecutivo asignado o canManage (admin/supervisor)
+      if (!canManage && cliente.ejecutivo_id !== user?.id) {
         toast.error("No tenés permiso para editar este cliente");
         navigate(-1);
         return;
@@ -83,18 +89,28 @@ const EditarCliente = () => {
         notas: cliente.notas ?? "",
         categoria_id: cliente.categoria_id ?? "",
         rubro_id: cliente.rubro_id ?? "",
+        sub_rubro_id: cliente.sub_rubro_id ?? "",
       });
       setLoading(false);
     });
-  }, [id, isAdmin, profileLoading, user]);
+  }, [id, canManage, profileLoading, user]);
 
   useEffect(() => {
     if (form.categoria_id) {
       setRubrosFiltrados(rubros.filter((r) => r.categoria_id === form.categoria_id));
     } else {
       setRubrosFiltrados([]);
+      setSubRubrosFiltrados([]);
     }
   }, [form.categoria_id, rubros]);
+
+  useEffect(() => {
+    if (form.rubro_id) {
+      setSubRubrosFiltrados(subRubros.filter((s) => s.rubro_id === form.rubro_id));
+    } else {
+      setSubRubrosFiltrados([]);
+    }
+  }, [form.rubro_id, subRubros]);
 
   const guardar = async () => {
     if (!form.nombre_comercial.trim()) {
@@ -119,6 +135,7 @@ const EditarCliente = () => {
       notas: form.notas.trim() || null,
       categoria_id: form.categoria_id || null,
       rubro_id: form.rubro_id || null,
+      sub_rubro_id: form.sub_rubro_id || null,
     }).eq("id", id);
 
     if (error) {
@@ -161,8 +178,8 @@ const EditarCliente = () => {
             value={form.email_cliente} onChange={(v) => set("email_cliente", v)} type="email" />
         </div>
 
-        {/* Clasificación — solo admin puede cambiar categoría/rubro */}
-        {isAdmin && (
+        {/* Clasificación — canManage (admin/supervisor) puede cambiar categoría/rubro */}
+        {canManage && (
           <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
             <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Clasificación</p>
 
@@ -170,7 +187,7 @@ const EditarCliente = () => {
               <Label>Categoría</Label>
               <select
                 value={form.categoria_id}
-                onChange={(e) => { set("categoria_id", e.target.value); set("rubro_id", ""); }}
+                onChange={(e) => { set("categoria_id", e.target.value); set("rubro_id", ""); set("sub_rubro_id", ""); }}
                 className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
               >
                 <option value="">Sin categoría</option>
@@ -184,7 +201,7 @@ const EditarCliente = () => {
               <Label>Rubro</Label>
               <select
                 value={form.rubro_id}
-                onChange={(e) => set("rubro_id", e.target.value)}
+                onChange={(e) => { set("rubro_id", e.target.value); set("sub_rubro_id", ""); }}
                 disabled={!form.categoria_id}
                 className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-50"
               >
@@ -194,6 +211,22 @@ const EditarCliente = () => {
                 ))}
               </select>
             </div>
+
+            {subRubrosFiltrados.length > 0 && (
+              <div className="space-y-1.5">
+                <Label>Sub Rubro <span className="text-muted-foreground text-[11px] font-normal">(opcional)</span></Label>
+                <select
+                  value={form.sub_rubro_id}
+                  onChange={(e) => set("sub_rubro_id", e.target.value)}
+                  className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                >
+                  <option value="">Sin sub rubro</option>
+                  {subRubrosFiltrados.map((s) => (
+                    <option key={s.id} value={s.id}>{s.nombre}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
         )}
 

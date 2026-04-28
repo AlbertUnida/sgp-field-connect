@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { Search, MapPin, Phone, ChevronRight, Loader2 } from "lucide-react";
+import { Link, useSearchParams } from "react-router-dom";
+import { Search, MapPin, Phone, ChevronRight, Loader2, User } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Input } from "@/components/ui/input";
 import { formatPYG, relativeDate } from "@/lib/mock-data";
@@ -20,11 +20,14 @@ interface ClienteReal {
   tarifa_mensual: number | null;
   proxima_accion: string | null;
   ultima_gestion: string | null;
+  ejecutivo_nombre: string | null;
 }
 
 const Clientes = () => {
   const { user } = useAuth();
-  const { isAdmin } = useProfile();
+  const { isAdmin, canManage } = useProfile();
+  const [searchParams] = useSearchParams();
+  const ejFilter = searchParams.get("ej"); // ejecutivo_id param for supervisor drill-down
   const [clientes, setClientes] = useState<ClienteReal[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -33,25 +36,36 @@ const Clientes = () => {
   useEffect(() => {
     if (!user) return;
     cargarClientes();
-  }, [user, isAdmin]);
+  }, [user, isAdmin, ejFilter]);
 
   const cargarClientes = async () => {
     setLoading(true);
 
     let query = supabase
       .from("clientes")
-      .select("id, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion")
+      .select("id, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion, ejecutivo:ejecutivo_id(nombre, apellido)")
       .eq("activo", true)
       .order("nombre_comercial");
 
-    // Admin ve todos, ejecutivo solo los suyos
-    if (!isAdmin) {
+    // Admin y supervisor ven todos; ejecutivo solo los suyos
+    if (!canManage) {
       query = query.eq("ejecutivo_id", user!.id);
+    } else if (ejFilter) {
+      // Filtro por ejecutivo específico (drill-down desde Seguimiento)
+      query = query.eq("ejecutivo_id", ejFilter);
     }
 
     const { data, error } = await query;
     if (error) console.error("Error cargando clientes:", error);
-    setClientes(data ?? []);
+
+    const mapped = (data ?? []).map((c: any) => ({
+      ...c,
+      ejecutivo_nombre: c.ejecutivo
+        ? `${c.ejecutivo.nombre ?? ""} ${c.ejecutivo.apellido ?? ""}`.trim()
+        : null,
+    }));
+
+    setClientes(mapped);
     setLoading(false);
   };
 
@@ -70,7 +84,7 @@ const Clientes = () => {
   return (
     <>
       <AppHeader
-        title="Mi Cartera"
+        title={ejFilter && canManage ? "Cartera del ejecutivo" : canManage ? "Cartera total" : "Mi Cartera"}
         subtitle={loading ? "Cargando..." : `${filtered.length} clientes`}
       />
 
@@ -131,6 +145,11 @@ const Clientes = () => {
                   <div className="min-w-0 flex-1">
                     <h3 className="truncate text-sm font-bold">{c.nombre_comercial}</h3>
                     {c.rubro && <p className="mt-0.5 text-xs text-muted-foreground">{c.rubro}</p>}
+                    {canManage && c.ejecutivo_nombre && (
+                      <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-primary">
+                        <User className="h-3 w-3" />{c.ejecutivo_nombre}
+                      </p>
+                    )}
                   </div>
                   <InstanciaBadge instancia={c.instancia} />
                 </div>

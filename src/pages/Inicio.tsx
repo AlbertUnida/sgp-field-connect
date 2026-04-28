@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowUpRight, Calendar, CheckCircle2, Clock, MapPin, Target, TrendingUp, Loader2 } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Calendar, CheckCircle2, Clock, MapPin, Target, TrendingUp, Loader2, AlertTriangle, PhoneCall, CalendarClock, ChevronRight } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { formatPYG, relativeDate } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
@@ -12,9 +12,22 @@ const MES_ACTUAL = new Date().getMonth() + 1;
 const ANIO_ACTUAL = new Date().getFullYear();
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
+// Agrega horas hábiles (lun–vie) a una fecha
+function addBusinessHours(start: Date, hours: number): Date {
+  const result = new Date(start);
+  let remaining = hours;
+  while (remaining > 0) {
+    result.setTime(result.getTime() + 3_600_000);
+    const day = result.getDay();
+    if (day !== 0 && day !== 6) remaining--;
+  }
+  return result;
+}
+
 const Inicio = () => {
   const { user } = useAuth();
   const { profile, nombreCompleto } = useProfile();
+  const navigate = useNavigate();
 
   const [meta, setMeta] = useState<{ monto_meta: number } | null>(null);
   const [cobradoMes, setCobradoMes] = useState(0);
@@ -23,6 +36,9 @@ const Inicio = () => {
   const [clientes, setClientes] = useState<any[]>([]);
   const [pendientes, setPendientes] = useState(0);
   const [totalAsignados, setTotalAsignados] = useState(0);
+  const [visitasVencidas, setVisitasVencidas] = useState(0);
+  const [contactosVencidos, setContactosVencidos] = useState(0);
+  const [proximosVencimientos, setProximosVencimientos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -41,7 +57,6 @@ const Inicio = () => {
       .eq("mes", MES_ACTUAL)
       .eq("anio", ANIO_ACTUAL)
       .maybeSingle();
-
     setMeta(metaData);
 
     // Cobros del mes actual
@@ -50,7 +65,6 @@ const Inicio = () => {
       .select("monto")
       .eq("ejecutivo_id", user!.id)
       .gte("fecha_cobro", `${ANIO_ACTUAL}-${String(MES_ACTUAL).padStart(2, "0")}-01`);
-
     const totalCobrado = cobrosData?.reduce((sum, c) => sum + (c.monto || 0), 0) ?? 0;
     setCobradoMes(totalCobrado);
     setCobrosCount(cobrosData?.length ?? 0);
@@ -63,10 +77,9 @@ const Inicio = () => {
       .eq("mes", MES_ACTUAL === 1 ? 12 : MES_ACTUAL - 1)
       .eq("anio", MES_ACTUAL === 1 ? ANIO_ACTUAL - 1 : ANIO_ACTUAL)
       .maybeSingle();
-
     setDeficitAnterior(ejecData?.deficit_nuevo ?? 0);
 
-    // Clientes asignados con próxima acción
+    // Clientes con próxima acción
     const { data: clientesData } = await supabase
       .from("clientes")
       .select("id, nombre_comercial, ciudad, instancia, proxima_accion")
@@ -75,10 +88,9 @@ const Inicio = () => {
       .not("proxima_accion", "is", null)
       .order("proxima_accion")
       .limit(4);
-
     setClientes(clientesData ?? []);
 
-    // Clientes pendientes de contacto hoy
+    // Pendientes hoy
     const hoy = new Date().toISOString().split("T")[0];
     const { count: countPendientes } = await supabase
       .from("clientes")
@@ -86,17 +98,96 @@ const Inicio = () => {
       .eq("ejecutivo_id", user!.id)
       .eq("activo", true)
       .lte("proxima_accion", hoy);
-
     setPendientes(countPendientes ?? 0);
 
-    // Total de clientes asignados activos
+    // Total cartera activa
     const { count: countAsignados } = await supabase
       .from("clientes")
       .select("id", { count: "exact", head: true })
       .eq("ejecutivo_id", user!.id)
       .eq("activo", true);
-
     setTotalAsignados(countAsignados ?? 0);
+
+    // ── Alertas de vencimiento ──────────────────────────────
+    const { data: clientesGestion } = await supabase
+      .from("clientes")
+      .select("id, rubro_rel:rubro_id(dias_visita)")
+      .eq("ejecutivo_id", user!.id)
+      .eq("activo", true)
+      .not("instancia", "eq", "CENSO");
+
+    if (clientesGestion && clientesGestion.length > 0) {
+      const ids = clientesGestion.map((c) => c.id);
+      const hace30Dias = new Date();
+      hace30Dias.setDate(hace30Dias.getDate() - 30);
+
+      const { data: gestiones } = await supabase
+        .from("gestiones")
+        .select("id, cliente_id, tipo, created_at")
+        .in("cliente_id", ids)
+        .gte("created_at", hace30Dias.toISOString())
+        .order("created_at", { ascending: true });
+
+      const gestionesArr = gestiones ?? [];
+      const ahora = new Date();
+      let vVisitas = 0;
+      let vContactos = 0;
+
+      for (const c of clientesGestion) {
+        const diasVisita = (c.rubro_rel as any)?.dias_visita ?? 7;
+
+        // Visitas vencidas
+        const visitas = gestionesArr
+          .filter((g) => g.cliente_id === c.id && g.tipo === "visita")
+          .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+        const diasDesdeVisita = visitas.length === 0
+          ? 30
+          : (ahora.getTime() - new Date(visitas[0].created_at).getTime()) / 86_400_000;
+
+        if (diasDesdeVisita > diasVisita) vVisitas++;
+
+        // Contactos vencidos: visita sin seguimiento en 24h hábiles
+        const visitasRecientes = gestionesArr.filter(
+          (g) => g.cliente_id === c.id && g.tipo === "visita" &&
+          ahora.getTime() - new Date(g.created_at).getTime() < 10 * 86_400_000
+        );
+
+        for (const visita of visitasRecientes) {
+          const visitaFecha = new Date(visita.created_at);
+          const deadline = addBusinessHours(visitaFecha, 24);
+
+          if (ahora > deadline) {
+            const tieneContacto = gestionesArr.some(
+              (g) =>
+                g.cliente_id === c.id &&
+                g.tipo !== "visita" &&
+                new Date(g.created_at) > visitaFecha &&
+                new Date(g.created_at) <= deadline
+            );
+            if (!tieneContacto) { vContactos++; break; }
+          }
+        }
+      }
+
+      setVisitasVencidas(vVisitas);
+      setContactosVencidos(vContactos);
+    }
+
+    // ── Vencimientos próximos (30 días) ─────────────────────
+    const hoy30 = new Date();
+    hoy30.setDate(hoy30.getDate() + 30);
+    const hoyStr = new Date().toISOString().split("T")[0];
+    const { data: vencData } = await supabase
+      .from("clientes")
+      .select("id, nombre_comercial, ciudad, fecha_vencimiento, instancia")
+      .eq("ejecutivo_id", user!.id)
+      .eq("activo", true)
+      .not("instancia", "eq", "CENSO")
+      .not("fecha_vencimiento", "is", null)
+      .lte("fecha_vencimiento", hoy30.toISOString().split("T")[0])
+      .order("fecha_vencimiento");
+    setProximosVencimientos(vencData ?? []);
 
     setLoading(false);
   };
@@ -108,6 +199,7 @@ const Inicio = () => {
   const goalBar = pct < 60 ? "bg-destructive" : pct < 85 ? "bg-warning" : "bg-success";
 
   const nombre = profile?.nombre ?? nombreCompleto?.split(" ")[0] ?? "!";
+  const hayAlertas = visitasVencidas > 0 || contactosVencidos > 0;
 
   return (
     <>
@@ -121,7 +213,7 @@ const Inicio = () => {
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : (
-        <div className="space-y-5 px-4 pt-5">
+        <div className="space-y-5 px-4 pt-5 pb-8">
 
           {/* Tarjeta de meta */}
           <section className="animate-fade-in rounded-2xl border border-border bg-card p-5 shadow-card">
@@ -168,6 +260,138 @@ const Inicio = () => {
             <StatCard icon={<Clock className="h-4 w-4" />} label="Pendientes" value={String(pendientes)} trend="para hoy" tone="warning" />
             <StatCard icon={<CheckCircle2 className="h-4 w-4" />} label="Cartera" value={String(totalAsignados)} trend="clientes activos" tone="primary" />
           </section>
+
+          {/* ⚠️ Alertas de vencimiento */}
+          {hayAlertas && (
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-destructive" />
+                <h2 className="text-sm font-bold text-destructive">Alertas de gestión</h2>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {/* Visitas vencidas */}
+                <button
+                  onClick={() => navigate("/app/alertas?tipo=visitas")}
+                  className={cn(
+                    "rounded-2xl border p-4 text-left shadow-card transition-smooth active:scale-[0.98]",
+                    visitasVencidas > 0
+                      ? "border-destructive/40 bg-destructive/5 hover:border-destructive/70"
+                      : "border-border bg-card"
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg", visitasVencidas > 0 ? "bg-destructive/15" : "bg-secondary")}>
+                      <AlertTriangle className={cn("h-4 w-4", visitasVencidas > 0 ? "text-destructive" : "text-muted-foreground")} />
+                    </div>
+                    {visitasVencidas > 0 && (
+                      <span className="rounded-full bg-destructive px-2 py-0.5 text-[10px] font-bold text-white">{visitasVencidas}</span>
+                    )}
+                  </div>
+                  <p className={cn("mt-2 text-lg font-bold tabular-nums", visitasVencidas > 0 ? "text-destructive" : "text-foreground")}>
+                    {visitasVencidas}
+                  </p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Visitas Vencidas</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Clientes sin visita en plazo</p>
+                </button>
+
+                {/* Contactos vencidos */}
+                <button
+                  onClick={() => navigate("/app/alertas?tipo=contactos")}
+                  className={cn(
+                    "rounded-2xl border p-4 text-left shadow-card transition-smooth active:scale-[0.98]",
+                    contactosVencidos > 0
+                      ? "border-warning/40 bg-warning/5 hover:border-warning/70"
+                      : "border-border bg-card"
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className={cn("flex h-8 w-8 items-center justify-center rounded-lg", contactosVencidos > 0 ? "bg-warning/15" : "bg-secondary")}>
+                      <PhoneCall className={cn("h-4 w-4", contactosVencidos > 0 ? "text-warning" : "text-muted-foreground")} />
+                    </div>
+                    {contactosVencidos > 0 && (
+                      <span className="rounded-full bg-warning px-2 py-0.5 text-[10px] font-bold text-white">{contactosVencidos}</span>
+                    )}
+                  </div>
+                  <p className={cn("mt-2 text-lg font-bold tabular-nums", contactosVencidos > 0 ? "text-warning" : "text-foreground")}>
+                    {contactosVencidos}
+                  </p>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Contactos Vencidos</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">Visitas sin seguimiento 24h</p>
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* Vencimientos próximos de licencias */}
+          {proximosVencimientos.length > 0 && (
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-primary" />
+                <h2 className="text-sm font-bold">Licencias por vencer</h2>
+                <span className="ml-auto rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold text-primary">
+                  {proximosVencimientos.length}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {proximosVencimientos.map((c) => {
+                  const fv = new Date(c.fecha_vencimiento + "T00:00:00");
+                  const hoy = new Date();
+                  const diasRestantes = Math.ceil((fv.getTime() - hoy.getTime()) / 86_400_000);
+                  const vencido = diasRestantes < 0;
+                  const urgente = diasRestantes <= 7;
+
+                  return (
+                    <Link
+                      key={c.id}
+                      to={`/app/clientes/${c.id}`}
+                      className={cn(
+                        "flex items-center gap-3 rounded-2xl border p-3.5 shadow-card transition-smooth active:scale-[0.99]",
+                        vencido
+                          ? "border-destructive/40 bg-destructive/5"
+                          : urgente
+                          ? "border-warning/40 bg-warning/5"
+                          : "border-border bg-card hover:border-primary/30"
+                      )}
+                    >
+                      <div className={cn(
+                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                        vencido ? "bg-destructive/15" : urgente ? "bg-warning/15" : "bg-secondary"
+                      )}>
+                        <CalendarClock className={cn(
+                          "h-5 w-5",
+                          vencido ? "text-destructive" : urgente ? "text-warning" : "text-primary"
+                        )} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold">{c.nombre_comercial}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {c.ciudad && `${c.ciudad} · `}
+                          {fv.toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <span className={cn(
+                          "block rounded-full px-2.5 py-1 text-[10px] font-bold",
+                          vencido
+                            ? "bg-destructive/15 text-destructive"
+                            : urgente
+                            ? "bg-warning/15 text-warning"
+                            : "bg-primary/10 text-primary"
+                        )}>
+                          {vencido
+                            ? `${Math.abs(diasRestantes)}d vencida`
+                            : diasRestantes === 0
+                            ? "Vence hoy"
+                            : `${diasRestantes}d`}
+                        </span>
+                        <ChevronRight className="mt-1 h-3.5 w-3.5 text-muted-foreground ml-auto" />
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* Próximas acciones */}
           <section>

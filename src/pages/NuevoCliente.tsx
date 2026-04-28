@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 interface Categoria { id: string; nombre: string; }
 interface Rubro { id: string; categoria_id: string; nombre: string; }
+interface SubRubro { id: string; rubro_id: string; nombre: string; }
 
 const NuevoCliente = () => {
   const { user } = useAuth();
@@ -19,13 +20,16 @@ const NuevoCliente = () => {
 
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [rubros, setRubros] = useState<Rubro[]>([]);
+  const [subRubros, setSubRubros] = useState<SubRubro[]>([]);
   const [rubrosFiltrados, setRubrosFiltrados] = useState<Rubro[]>([]);
+  const [subRubrosFiltrados, setSubRubrosFiltrados] = useState<SubRubro[]>([]);
   const [guardando, setGuardando] = useState(false);
 
   const [form, setForm] = useState({
     tipo_cliente: "local" as "local" | "evento",
     categoria_id: "",
     rubro_id: "",
+    sub_rubro_id: "",
     nombre_comercial: "",
     razon_social: "",
     ruc: "",
@@ -41,16 +45,27 @@ const NuevoCliente = () => {
   useEffect(() => {
     supabase.from("categorias").select("*").order("nombre").then(({ data }) => setCategorias(data ?? []));
     supabase.from("rubros").select("*").order("nombre").then(({ data }) => setRubros(data ?? []));
+    supabase.from("sub_rubros").select("*").order("nombre").then(({ data }) => setSubRubros(data ?? []));
   }, []);
 
   useEffect(() => {
     if (form.categoria_id) {
       setRubrosFiltrados(rubros.filter((r) => r.categoria_id === form.categoria_id));
-      setForm((p) => ({ ...p, rubro_id: "" }));
+      setForm((p) => ({ ...p, rubro_id: "", sub_rubro_id: "" }));
     } else {
       setRubrosFiltrados([]);
+      setSubRubrosFiltrados([]);
     }
   }, [form.categoria_id, rubros]);
+
+  useEffect(() => {
+    if (form.rubro_id) {
+      setSubRubrosFiltrados(subRubros.filter((s) => s.rubro_id === form.rubro_id));
+      setForm((p) => ({ ...p, sub_rubro_id: "" }));
+    } else {
+      setSubRubrosFiltrados([]);
+    }
+  }, [form.rubro_id, subRubros]);
 
   const set = (key: string, val: string) => setForm((p) => ({ ...p, [key]: val }));
 
@@ -74,6 +89,7 @@ const NuevoCliente = () => {
       tarifa_mensual: form.monto_licencia ? parseInt(form.monto_licencia.replace(/\D/g, "")) : null,
       categoria_id: form.categoria_id,
       rubro_id: form.rubro_id,
+      sub_rubro_id: form.sub_rubro_id || null,
       tipo_cliente: form.tipo_cliente,
       instancia: "CENSO",
       estado: "activo",
@@ -162,6 +178,22 @@ const NuevoCliente = () => {
               ))}
             </select>
           </div>
+
+          {subRubrosFiltrados.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Sub Rubro <span className="text-muted-foreground text-[11px] font-normal">(opcional)</span></Label>
+              <select
+                value={form.sub_rubro_id}
+                onChange={(e) => set("sub_rubro_id", e.target.value)}
+                className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Sin sub rubro</option>
+                {subRubrosFiltrados.map((s) => (
+                  <option key={s.id} value={s.id}>{s.nombre}</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Datos del local */}

@@ -34,7 +34,7 @@ const INSTANCIA_CONFIG: Record<string, { label: string; color: string }> = {
 
 const Reportes = () => {
   const { user } = useAuth();
-  const { isAdmin } = useProfile();
+  const { isAdmin, canManage } = useProfile();
   const [loading, setLoading] = useState(true);
   const [ejecutivos, setEjecutivos] = useState<EjecutivoStats[]>([]);
   const [embudo, setEmbudo] = useState<InstanciaCount[]>([]);
@@ -42,15 +42,15 @@ const Reportes = () => {
   useEffect(() => {
     if (!user) return;
     cargarDatos();
-  }, [user, isAdmin]);
+  }, [user, canManage]);
 
   const cargarDatos = async () => {
     setLoading(true);
 
     const primerDia = `${ANIO_ACTUAL}-${String(MES_ACTUAL).padStart(2, "0")}-01`;
 
-    // Si no es admin, solo se ve a sí mismo
-    if (!isAdmin) {
+    // Si no es admin ni supervisor, solo se ve a sí mismo
+    if (!canManage) {
       const [{ data: metaData }, { data: cobrosData }, { data: clientesData }, { data: perfil }] = await Promise.all([
         supabase.from("metas").select("monto_meta")
           .eq("ejecutivo_id", user!.id).eq("mes", MES_ACTUAL).eq("anio", ANIO_ACTUAL).maybeSingle(),
@@ -71,7 +71,7 @@ const Reportes = () => {
         clientes: (clientesData as any)?.count ?? 0,
       }]);
     } else {
-      // Admin ve todo el equipo
+      // Admin y supervisor ven todo el equipo
       const [{ data: perfiles }, { data: metas }, { data: cobros }, { data: clientesCounts }] = await Promise.all([
         supabase.from("profiles").select("id, nombre, apellido")
           .in("rol", ["ejecutivo", "supervisor"]).eq("activo", true).order("nombre"),
@@ -150,7 +150,7 @@ const Reportes = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent">
-                  {isAdmin ? "Equipo total" : "Mi desempeño"}
+                  {canManage ? "Equipo total" : "Mi desempeño"}
                 </p>
                 <p className="mt-1 text-2xl font-bold tabular-nums">{formatPYG(totalCobrado)}</p>
                 {totalMeta > 0 ? (
@@ -168,7 +168,7 @@ const Reportes = () => {
                 <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/15">
                   <div className="h-full rounded-full gradient-accent" style={{ width: `${Math.min(teamPct, 100)}%` }} />
                 </div>
-                <p className="mt-2 text-xs font-bold text-accent">{teamPct}% de la meta {isAdmin ? "global" : "mensual"}</p>
+                <p className="mt-2 text-xs font-bold text-accent">{teamPct}% de la meta {canManage ? "global" : "mensual"}</p>
               </>
             )}
           </section>
@@ -209,9 +209,9 @@ const Reportes = () => {
           <section>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-bold">
-                {isAdmin ? "Performance por ejecutivo" : "Mi rendimiento"}
+                {canManage ? "Performance por ejecutivo" : "Mi rendimiento"}
               </h2>
-              {isAdmin && (
+              {canManage && (
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground">
                   <Users className="h-3 w-3" /> {sortedExec.length}
                 </span>
@@ -226,8 +226,8 @@ const Reportes = () => {
               <div className="space-y-2.5">
                 {sortedExec.map((e, i) => {
                   const pct = e.meta > 0 ? Math.round((e.cobrado / e.meta) * 100) : 0;
-                  const isTop = isAdmin && i === 0 && sortedExec.length > 1;
-                  const isBottom = isAdmin && i === sortedExec.length - 1 && sortedExec.length > 1 && pct < 60;
+                  const isTop = canManage && i === 0 && sortedExec.length > 1;
+                  const isBottom = canManage && i === sortedExec.length - 1 && sortedExec.length > 1 && pct < 60;
                   const tone = pct >= 85 ? "success" : pct >= 60 ? "warning" : "destructive";
                   const nombreCompleto = [e.nombre, e.apellido].filter(Boolean).join(" ");
                   const iniciales = nombreCompleto.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();

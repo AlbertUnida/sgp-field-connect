@@ -11,11 +11,12 @@ const baseTabs = [
 ];
 
 export const BottomNav = () => {
-  const { isAdmin } = useProfile();
+  const { canManage } = useProfile();
   const navigate = useNavigate();
   const [menuAbierto, setMenuAbierto] = useState(false);
 
-  const tabs = isAdmin
+  // Admin y supervisor ven el acceso al panel (admin ve todo; supervisor solo CENSO)
+  const tabs = canManage
     ? [...baseTabs, { to: "/app/admin", label: "Admin", icon: Settings }]
     : baseTabs;
 

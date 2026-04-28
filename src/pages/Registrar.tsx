@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, MapPin, Phone, Car, Save, Calendar, Mail, Search, X, Loader2, MessageCircle, FileText } from "lucide-react";
+import { Camera, MapPin, Phone, Car, Save, Calendar, Mail, Search, X, Loader2, MessageCircle, FileText, ImagePlus, Trash2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +38,7 @@ const RESULTADOS = [
 
 const Registrar = () => {
   const { user } = useAuth();
-  const { isAdmin } = useProfile();
+  const { canManage, nombreCompleto } = useProfile();
 
   // Clientes disponibles
   const [clientes, setClientes] = useState<ClienteOpcion[]>([]);
@@ -58,10 +58,46 @@ const Registrar = () => {
   const [proxima, setProxima] = useState("");
   const [guardando, setGuardando] = useState(false);
 
+  // GPS — captura automática, sin acción manual del ejecutivo
+  const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsEstado, setGpsEstado] = useState<"idle" | "buscando" | "ok" | "error">("idle");
+
+  // Foto
+  const fotoInputRef = useRef<HTMLInputElement>(null);
+  const [fotoFile, setFotoFile] = useState<File | null>(null);
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null);
+  const [subiendoFoto, setSubiendoFoto] = useState(false);
+
+  // Promesa de GPS reutilizable (usada al cambiar tipo y al guardar)
+  const capturarGPSPromise = (): Promise<{ lat: number; lng: number } | null> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) { resolve(null); return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+  };
+
+  // Auto-captura cuando el tipo es visita
+  useEffect(() => {
+    if (tipo !== "visita") {
+      setGps(null);
+      setGpsEstado("idle");
+      return;
+    }
+    setGpsEstado("buscando");
+    capturarGPSPromise().then((coords) => {
+      if (coords) { setGps(coords); setGpsEstado("ok"); }
+      else { setGpsEstado("error"); }
+    });
+  }, [tipo]);
+
   useEffect(() => {
     if (!user) return;
     cargarClientes();
-  }, [user, isAdmin]);
+  }, [user, canManage]);
 
   const cargarClientes = async () => {
     setCargandoClientes(true);
@@ -71,7 +107,7 @@ const Registrar = () => {
       .eq("activo", true)
       .order("nombre_comercial");
 
-    if (!isAdmin) {
+    if (!canManage) {
       query = query.eq("ejecutivo_id", user!.id);
     }
 
@@ -118,11 +154,131 @@ const Registrar = () => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Aplica una barra con nombre, fecha y hora en la parte inferior de la foto
+  const aplicarMarcaDeAgua = (file: File, nombre: string): Promise<File> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d")!;
+
+        // Dibujar la imagen original
+        ctx.drawImage(img, 0, 0);
+
+        // Texto de la marca
+        const ahora = new Date();
+        const fecha = ahora.toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit", year: "numeric" });
+        const hora = ahora.toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        const linea1 = nombre.toUpperCase();
+        const linea2 = `${fecha}  •  ${hora}  •  SGP Paraguay`;
+
+        const fontSize = Math.max(Math.round(img.width * 0.038), 22);
+        const smallSize = Math.round(fontSize * 0.72);
+        const padding = Math.round(fontSize * 0.7);
+        const barHeight = fontSize + smallSize + padding * 2.5;
+
+        // Barra oscura translúcida
+        ctx.fillStyle = "rgba(0, 0, 0, 0.70)";
+        ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+
+        // Línea de color SGP arriba de la barra
+        ctx.fillStyle = "#3b82f6"; // azul primario
+        ctx.fillRect(0, img.height - barHeight, img.width, Math.round(fontSize * 0.18));
+
+        // Nombre del ejecutivo (grande)
+        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+        ctx.fillStyle = "#ffffff";
+        ctx.textBaseline = "top";
+        ctx.textAlign = "left";
+        ctx.fillText(linea1, padding, img.height - barHeight + padding);
+
+        // Fecha, hora y marca SGP (pequeño)
+        ctx.font = `${smallSize}px Arial, sans-serif`;
+        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        ctx.fillText(linea2, padding, img.height - barHeight + padding + fontSize + Math.round(smallSize * 0.3));
+
+        URL.revokeObjectURL(objectUrl);
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) { resolve(file); return; }
+            const nuevoArchivo = new File(
+              [blob],
+              file.name.replace(/\.[^.]+$/, ".jpg"),
+              { type: "image/jpeg" }
+            );
+            resolve(nuevoArchivo);
+          },
+          "image/jpeg",
+          0.92
+        );
+      };
+
+      img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
+      img.src = objectUrl;
+    });
+  };
+
+  const seleccionarFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Aplicar marca de agua inmediatamente — lo que se ve en preview es lo que se sube
+    const nombre = nombreCompleto || "Ejecutivo SGP";
+    const fotoConMarca = await aplicarMarcaDeAgua(file, nombre);
+    setFotoFile(fotoConMarca);
+    setFotoPreview(URL.createObjectURL(fotoConMarca));
+  };
+
+  const quitarFoto = () => {
+    setFotoFile(null);
+    setFotoPreview(null);
+    if (fotoInputRef.current) fotoInputRef.current.value = "";
+  };
+
   const guardar = async () => {
     if (!clienteSeleccionado) { toast.error("Seleccioná un cliente"); return; }
     if (!resultado) { toast.error("Seleccioná el resultado de la gestión"); return; }
 
     setGuardando(true);
+
+    // Para visitas: recapturar GPS fresco en el momento exacto del guardado
+    let coordenadas = gps;
+    if (tipo === "visita") {
+      setGpsEstado("buscando");
+      const fresh = await capturarGPSPromise();
+      if (fresh) {
+        coordenadas = fresh;
+        setGps(fresh);
+        setGpsEstado("ok");
+      } else {
+        setGpsEstado("error");
+        // Guardamos igual pero sin coordenadas — se registra el intento fallido
+        coordenadas = null;
+      }
+    }
+
+    // Subir foto si hay una seleccionada
+    let fotoUrl: string | null = null;
+    if (fotoFile) {
+      setSubiendoFoto(true);
+      const ext = fotoFile.name.split(".").pop() ?? "jpg";
+      const path = `${user!.id}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("gestiones-fotos")
+        .upload(path, fotoFile, { contentType: fotoFile.type, upsert: false });
+      if (!uploadError) {
+        const { data: urlData } = supabase.storage.from("gestiones-fotos").getPublicUrl(path);
+        fotoUrl = urlData.publicUrl;
+      } else {
+        toast.error("No se pudo subir la foto — se guardará sin imagen");
+      }
+      setSubiendoFoto(false);
+    }
 
     const { error } = await supabase.from("gestiones").insert({
       cliente_id: parseInt(clienteSeleccionado.id),
@@ -131,6 +287,9 @@ const Registrar = () => {
       resultado,
       nota: notas || null,
       fecha_inicio: new Date().toISOString(),
+      lat_inicio: coordenadas?.lat ?? null,
+      lng_inicio: coordenadas?.lng ?? null,
+      foto_url: fotoUrl,
     });
 
     if (error) {
@@ -151,6 +310,7 @@ const Registrar = () => {
     setResultado("");
     setNotas("");
     setProxima("");
+    quitarFoto();
     setGuardando(false);
   };
 
@@ -319,32 +479,109 @@ const Registrar = () => {
           </div>
         </div>
 
-        {/* GPS / Foto (solo en visitas) */}
+        {/* Evidencia de visita — solo lectura, GPS automático */}
         {tipo === "visita" && (
           <div className="rounded-2xl border border-border bg-card p-4 shadow-card">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Evidencia</p>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Evidencia de visita</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <div className="rounded-xl border border-dashed border-border bg-secondary/40 p-3">
-                <div className="flex items-center gap-2 text-success">
-                  <MapPin className="h-4 w-4" />
-                  <span className="text-xs font-semibold">GPS captado</span>
-                </div>
-                <p className="mt-1 text-[10px] text-muted-foreground">-25.2867, -57.6542</p>
-              </div>
-              <button
-                type="button"
-                className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border bg-secondary/40 p-3 text-muted-foreground transition-smooth hover:border-primary/40 hover:text-primary"
+
+              {/* GPS — indicador automático, sin acción manual */}
+              <div
+                className={cn(
+                  "flex flex-col items-center justify-center gap-1.5 rounded-xl border p-3",
+                  gpsEstado === "ok"
+                    ? "border-success/40 bg-success/5"
+                    : gpsEstado === "error"
+                    ? "border-destructive/40 bg-destructive/5"
+                    : "border-dashed border-border bg-secondary/40"
+                )}
               >
-                <Camera className="h-5 w-5" />
-                <span className="text-[11px] font-semibold">Adjuntar foto</span>
-              </button>
+                {gpsEstado === "buscando" ? (
+                  <>
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                    <span className="text-[11px] font-semibold text-muted-foreground">Obteniendo ubicación...</span>
+                  </>
+                ) : gpsEstado === "ok" && gps ? (
+                  <>
+                    <MapPin className="h-5 w-5 text-success" />
+                    <span className="text-[11px] font-semibold text-success">Ubicación captada ✓</span>
+                    <span className="text-[10px] text-muted-foreground text-center">
+                      {gps.lat.toFixed(5)}, {gps.lng.toFixed(5)}
+                    </span>
+                  </>
+                ) : gpsEstado === "error" ? (
+                  <>
+                    <MapPin className="h-5 w-5 text-destructive" />
+                    <span className="text-[11px] font-semibold text-destructive">Sin acceso GPS</span>
+                    <span className="text-[10px] text-muted-foreground text-center">Habilitá la ubicación en tu dispositivo</span>
+                  </>
+                ) : (
+                  <>
+                    <MapPin className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-[11px] font-semibold text-muted-foreground">GPS pendiente</span>
+                  </>
+                )}
+              </div>
+
+              {/* Foto */}
+              <div>
+                <input
+                  ref={fotoInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={seleccionarFoto}
+                />
+                {fotoPreview ? (
+                  <div className="relative h-full min-h-[88px] overflow-hidden rounded-xl border border-success/40">
+                    <img
+                      src={fotoPreview}
+                      alt="Foto de visita"
+                      className="h-full w-full object-cover"
+                      style={{ minHeight: 88 }}
+                    />
+                    <button
+                      type="button"
+                      onClick={quitarFoto}
+                      className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                    <span className="absolute bottom-1 left-1.5 rounded-full bg-black/50 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                      ✓ Foto lista
+                    </span>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fotoInputRef.current?.click()}
+                    className="flex h-full min-h-[88px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border bg-secondary/40 p-3 text-muted-foreground transition-smooth hover:border-primary/40 hover:text-primary"
+                  >
+                    <ImagePlus className="h-5 w-5" />
+                    <span className="text-[11px] font-semibold">Sacar foto</span>
+                    <span className="text-[10px]">Evidencia de visita</span>
+                  </button>
+                )}
+              </div>
             </div>
+
+            {gpsEstado === "error" && (
+              <p className="mt-2.5 text-[11px] text-destructive font-semibold">
+                ⚠️ La visita se guardará sin coordenadas. El sistema registrará el intento de geolocalización fallido.
+              </p>
+            )}
           </div>
         )}
 
-        <Button onClick={guardar} disabled={guardando || !clienteSeleccionado || !resultado || clienteSeleccionado?.instancia === "CENSO"} className="h-13 w-full gap-2 text-base font-semibold">
-          {guardando ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
-          {guardando ? "Guardando..." : "Guardar en bitácora"}
+        <Button
+          onClick={guardar}
+          disabled={guardando || subiendoFoto || !clienteSeleccionado || !resultado || clienteSeleccionado?.instancia === "CENSO"}
+          className="h-13 w-full gap-2 text-base font-semibold"
+        >
+          <Loader2 className={cn("h-5 w-5 animate-spin", !guardando && !subiendoFoto && "hidden")} />
+          <Save className={cn("h-5 w-5", (guardando || subiendoFoto) && "hidden")} />
+          {subiendoFoto ? "Subiendo foto..." : guardando ? "Guardando..." : "Guardar en bitácora"}
         </Button>
       </div>
     </>

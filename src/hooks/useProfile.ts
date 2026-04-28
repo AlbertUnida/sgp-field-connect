@@ -41,10 +41,17 @@ export const useProfile = () => {
     ? [profile.nombre, profile.apellido].filter(Boolean).join(" ")
     : null;
 
+  const isAdmin = profile?.rol === "admin";
+  const isSupervisor = profile?.rol === "supervisor";
+  // canManage: puede ver toda la cartera y los reportes del equipo (admin + supervisor)
+  const canManage = isAdmin || isSupervisor;
+
   return {
     profile,
     loading,
-    isAdmin: profile?.rol === "admin",
+    isAdmin,
+    isSupervisor,
+    canManage,
     nombreCompleto,
   };
 };
