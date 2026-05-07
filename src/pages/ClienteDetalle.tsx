@@ -557,6 +557,16 @@ const ClienteDetalle = () => {
 
       <div className="space-y-4 px-4 pt-4 pb-8">
 
+        {/* Banner informativo para ejecutivo que ve un cliente propio en CENSO (sin ejecutivo asignado aún) */}
+        {!canManage && !esPropio && instancia === "CENSO" && (
+          <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-1 dark:bg-amber-950/30 dark:border-amber-700">
+            <p className="text-sm font-bold text-amber-800 dark:text-amber-300">⏳ Pendiente de asignación</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Este cliente está en CENSO esperando ser asignado. Avisá a tu supervisor o administrador para que te lo asigne y puedas comenzar a gestionarlo.
+            </p>
+          </section>
+        )}
+
         {/* Datos del cliente */}
         <section className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-3">
           <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Datos del local</h2>

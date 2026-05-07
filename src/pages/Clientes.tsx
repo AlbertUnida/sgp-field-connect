@@ -47,9 +47,12 @@ const Clientes = () => {
       .eq("activo", true)
       .order("nombre_comercial");
 
-    // Admin y supervisor ven todos; ejecutivo solo los suyos
+    // Admin y supervisor ven todos; ejecutivo ve su cartera asignada
+    // + clientes en CENSO que él mismo creó (para recordar que están pendientes de asignación)
     if (!canManage) {
-      query = query.eq("ejecutivo_id", user!.id);
+      query = query.or(
+        `ejecutivo_id.eq.${user!.id},and(creado_por.eq.${user!.id},instancia.eq.CENSO)`
+      );
     } else if (ejFilter) {
       // Filtro por ejecutivo específico (drill-down desde Seguimiento)
       query = query.eq("ejecutivo_id", ejFilter);
@@ -139,7 +142,12 @@ const Clientes = () => {
               <Link
                 key={c.id}
                 to={`/app/clientes/${c.id}`}
-                className="block rounded-2xl border border-border bg-card p-4 shadow-card transition-smooth hover:border-primary/40 hover:shadow-elevated active:scale-[0.99]"
+                className={cn(
+                  "block rounded-2xl border bg-card p-4 shadow-card transition-smooth hover:shadow-elevated active:scale-[0.99]",
+                  !canManage && c.instancia === "CENSO"
+                    ? "border-amber-300 bg-amber-50/50 dark:bg-amber-950/20"
+                    : "border-border hover:border-primary/40"
+                )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
@@ -153,6 +161,12 @@ const Clientes = () => {
                   </div>
                   <InstanciaBadge instancia={c.instancia} />
                 </div>
+                {/* Aviso solo para ejecutivos: cliente creado por ellos pero aún sin asignar */}
+                {!canManage && c.instancia === "CENSO" && (
+                  <p className="mt-2 rounded-xl bg-amber-100 px-3 py-1.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                    ⏳ Pendiente de asignación — solicitá a tu supervisor que te lo asigne
+                  </p>
+                )}
 
                 <div className="mt-3 grid grid-cols-2 gap-y-1.5 text-[11px] text-muted-foreground">
                   {c.ciudad && (
