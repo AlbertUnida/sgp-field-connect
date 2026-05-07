@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, Trophy, Users, Loader2 } from "lucide-react";
+import { TrendingUp, TrendingDown, Trophy, Users, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { formatPYG } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
@@ -7,8 +7,6 @@ import { supabase } from "@/lib/supabaseClient";
 import { useProfile } from "@/hooks/useProfile";
 import { useAuth } from "@/contexts/AuthContext";
 
-const MES_ACTUAL = new Date().getMonth() + 1;
-const ANIO_ACTUAL = new Date().getFullYear();
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
 interface EjecutivoStats {
@@ -34,28 +32,51 @@ const INSTANCIA_CONFIG: Record<string, { label: string; color: string }> = {
 
 const Reportes = () => {
   const { user } = useAuth();
-  const { isAdmin, canManage } = useProfile();
+  const { canManage } = useProfile();
+  const now = new Date();
+  const [mes, setMes] = useState(now.getMonth() + 1);
+  const [anio, setAnio] = useState(now.getFullYear());
   const [loading, setLoading] = useState(true);
   const [ejecutivos, setEjecutivos] = useState<EjecutivoStats[]>([]);
   const [embudo, setEmbudo] = useState<InstanciaCount[]>([]);
 
+  const mesActual = now.getMonth() + 1;
+  const anioActual = now.getFullYear();
+  const esMesActual = mes === mesActual && anio === anioActual;
+
+  const irMesAnterior = () => {
+    if (mes === 1) { setMes(12); setAnio((a) => a - 1); }
+    else setMes((m) => m - 1);
+  };
+  const irMesSiguiente = () => {
+    if (esMesActual) return;
+    if (mes === 12) { setMes(1); setAnio((a) => a + 1); }
+    else setMes((m) => m + 1);
+  };
+
   useEffect(() => {
     if (!user) return;
     cargarDatos();
-  }, [user, canManage]);
+  }, [user, canManage, mes, anio]);
 
   const cargarDatos = async () => {
     setLoading(true);
 
-    const primerDia = `${ANIO_ACTUAL}-${String(MES_ACTUAL).padStart(2, "0")}-01`;
+    const primerDia = `${anio}-${String(mes).padStart(2, "0")}-01`;
+    // Primer día del mes siguiente como límite superior (exclusive)
+    const mesNext = mes === 12 ? 1 : mes + 1;
+    const anioNext = mes === 12 ? anio + 1 : anio;
+    const primerDiaSiguiente = `${anioNext}-${String(mesNext).padStart(2, "0")}-01`;
 
     // Si no es admin ni supervisor, solo se ve a sí mismo
     if (!canManage) {
       const [{ data: metaData }, { data: cobrosData }, { data: clientesData }, { data: perfil }] = await Promise.all([
         supabase.from("metas").select("monto_meta")
-          .eq("ejecutivo_id", user!.id).eq("mes", MES_ACTUAL).eq("anio", ANIO_ACTUAL).maybeSingle(),
+          .eq("ejecutivo_id", user!.id).eq("mes", mes).eq("anio", anio).maybeSingle(),
         supabase.from("cobros").select("monto")
-          .eq("ejecutivo_id", user!.id).gte("fecha_cobro", primerDia),
+          .eq("ejecutivo_id", user!.id)
+          .gte("fecha_cobro", primerDia)
+          .lt("fecha_cobro", primerDiaSiguiente),
         supabase.from("clientes").select("id", { count: "exact", head: true })
           .eq("ejecutivo_id", user!.id).eq("activo", true),
         supabase.from("profiles").select("nombre, apellido").eq("id", user!.id).single(),
@@ -76,9 +97,10 @@ const Reportes = () => {
         supabase.from("profiles").select("id, nombre, apellido")
           .in("rol", ["ejecutivo", "supervisor"]).eq("activo", true).order("nombre"),
         supabase.from("metas").select("ejecutivo_id, monto_meta")
-          .eq("mes", MES_ACTUAL).eq("anio", ANIO_ACTUAL),
+          .eq("mes", mes).eq("anio", anio),
         supabase.from("cobros").select("ejecutivo_id, monto")
-          .gte("fecha_cobro", primerDia),
+          .gte("fecha_cobro", primerDia)
+          .lt("fecha_cobro", primerDiaSiguiente),
         supabase.from("clientes").select("ejecutivo_id")
           .eq("activo", true).not("ejecutivo_id", "is", null),
       ]);
@@ -133,10 +155,33 @@ const Reportes = () => {
 
   return (
     <>
-      <AppHeader
-        title="Reportes"
-        subtitle={`${MESES[MES_ACTUAL - 1]} ${ANIO_ACTUAL}`}
-      />
+      <AppHeader title="Reportes" />
+
+      {/* Selector de mes */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background sticky top-[56px] z-10">
+        <button
+          onClick={irMesAnterior}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-foreground active:scale-95 transition-transform"
+        >
+          <ChevronLeft className="h-5 w-5" />
+        </button>
+        <div className="text-center">
+          <p className="text-sm font-bold">{MESES[mes - 1]} {anio}</p>
+          {esMesActual && (
+            <p className="text-[10px] text-muted-foreground font-medium">Mes en curso</p>
+          )}
+        </div>
+        <button
+          onClick={irMesSiguiente}
+          disabled={esMesActual}
+          className={cn(
+            "flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-foreground active:scale-95 transition-transform",
+            esMesActual && "opacity-30 cursor-not-allowed"
+          )}
+        >
+          <ChevronRight className="h-5 w-5" />
+        </button>
+      </div>
 
       {loading ? (
         <div className="flex justify-center pt-20">
@@ -156,7 +201,7 @@ const Reportes = () => {
                 {totalMeta > 0 ? (
                   <p className="text-xs text-primary-foreground/70">de {formatPYG(totalMeta)} en meta</p>
                 ) : (
-                  <p className="text-xs text-primary-foreground/70">Sin meta asignada este mes</p>
+                  <p className="text-xs text-primary-foreground/70">Sin meta asignada en {MESES[mes - 1]}</p>
                 )}
               </div>
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/20 text-accent">
@@ -168,7 +213,7 @@ const Reportes = () => {
                 <div className="mt-4 h-2.5 overflow-hidden rounded-full bg-white/15">
                   <div className="h-full rounded-full gradient-accent" style={{ width: `${Math.min(teamPct, 100)}%` }} />
                 </div>
-                <p className="mt-2 text-xs font-bold text-accent">{teamPct}% de la meta {canManage ? "global" : "mensual"}</p>
+                <p className="mt-2 text-xs font-bold text-accent">{teamPct}% de la meta de {MESES[mes - 1]}</p>
               </>
             )}
           </section>
