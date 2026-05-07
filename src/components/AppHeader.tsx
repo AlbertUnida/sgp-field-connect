@@ -1,6 +1,7 @@
-import { Bell, LogOut, Wifi } from "lucide-react";
+import { Bell, Wifi } from "lucide-react";
+import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "sonner";
+import { useProfile } from "@/hooks/useProfile";
 
 interface AppHeaderProps {
   title: string;
@@ -8,12 +9,15 @@ interface AppHeaderProps {
 }
 
 export const AppHeader = ({ title, subtitle }: AppHeaderProps) => {
-  const { signOut, user } = useAuth();
+  const { user } = useAuth();
+  const { profile } = useProfile();
 
-  const handleSignOut = async () => {
-    await signOut();
-    toast.success("Sesión cerrada");
-  };
+  const iniciales = [profile?.nombre, profile?.apellido]
+    .filter(Boolean)
+    .map((s) => s![0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || user?.email?.slice(0, 2).toUpperCase() || "??";
 
   return (
     <header className="sticky top-0 z-30 gradient-hero text-primary-foreground shadow-elevated">
@@ -31,13 +35,14 @@ export const AppHeader = ({ title, subtitle }: AppHeaderProps) => {
             <Bell className="h-4 w-4" />
             <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent ring-2 ring-primary" />
           </span>
-          <button
-            onClick={handleSignOut}
-            title={`Cerrar sesión (${user?.email})`}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+          {/* Avatar → navega a perfil */}
+          <Link
+            to="/app/perfil"
+            title={user?.email}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-accent/30 hover:bg-accent/50 transition-colors text-[11px] font-bold text-accent"
           >
-            <LogOut className="h-4 w-4" />
-          </button>
+            {iniciales}
+          </Link>
         </div>
       </div>
     </header>

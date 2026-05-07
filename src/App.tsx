@@ -16,6 +16,7 @@ import Admin from "./pages/Admin";
 import NuevoCliente from "./pages/NuevoCliente";
 import EditarCliente from "./pages/EditarCliente";
 import Alertas from "./pages/Alertas";
+import Perfil from "./pages/Perfil";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -75,6 +76,7 @@ const AppRoutes = () => (
       <Route path="admin" element={<Admin />} />
       <Route path="nuevo-cliente" element={<NuevoCliente />} />
       <Route path="alertas" element={<Alertas />} />
+      <Route path="perfil" element={<Perfil />} />
     </Route>
     <Route path="/index" element={<Navigate to="/" replace />} />
     <Route path="*" element={<NotFound />} />
