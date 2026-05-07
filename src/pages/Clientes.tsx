@@ -21,6 +21,7 @@ interface ClienteReal {
   proxima_accion: string | null;
   ultima_gestion: string | null;
   ejecutivo_nombre: string | null;
+  ejecutivo_id: string | null;
 }
 
 const Clientes = () => {
@@ -32,6 +33,7 @@ const Clientes = () => {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<string>("all");
+  const [soloMios, setSoloMios] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -47,13 +49,8 @@ const Clientes = () => {
       .eq("activo", true)
       .order("nombre_comercial");
 
-    // Admin y supervisor ven todos; ejecutivo ve su cartera asignada
-    // + clientes en CENSO que él mismo creó (para recordar que están pendientes de asignación)
-    if (!canManage) {
-      query = query.or(
-        `ejecutivo_id.eq.${user!.id},and(creado_por.eq.${user!.id},instancia.eq.CENSO)`
-      );
-    } else if (ejFilter) {
+    // Admin y supervisor ven todos; ejecutivo ve TODOS los clientes (solo lectura en los ajenos)
+    if (canManage && ejFilter) {
       // Filtro por ejecutivo específico (drill-down desde Seguimiento)
       query = query.eq("ejecutivo_id", ejFilter);
     }
@@ -63,6 +60,7 @@ const Clientes = () => {
 
     const mapped = (data ?? []).map((c: any) => ({
       ...c,
+      ejecutivo_id: c.ejecutivo_id ?? null,
       ejecutivo_nombre: c.ejecutivo
         ? `${c.ejecutivo.nombre ?? ""} ${c.ejecutivo.apellido ?? ""}`.trim()
         : null,
@@ -80,14 +78,16 @@ const Clientes = () => {
         (c.rubro ?? "").toLowerCase().includes(q.toLowerCase()) ||
         (c.ciudad ?? "").toLowerCase().includes(q.toLowerCase());
       const matchF = filter === "all" || (c.instancia ?? "CENSO") === filter;
-      return matchQ && matchF;
+      // Chip "Mi Cartera": solo los asignados al ejecutivo actual
+      const matchMios = !soloMios || c.ejecutivo_id === user?.id;
+      return matchQ && matchF && matchMios;
     });
-  }, [clientes, q, filter]);
+  }, [clientes, q, filter, soloMios, user]);
 
   return (
     <>
       <AppHeader
-        title={ejFilter && canManage ? "Cartera del ejecutivo" : canManage ? "Cartera total" : "Mi Cartera"}
+        title={ejFilter && canManage ? "Cartera del ejecutivo" : canManage ? "Cartera total" : "Clientes"}
         subtitle={loading ? "Cargando..." : `${filtered.length} clientes`}
       />
 
@@ -106,6 +106,17 @@ const Clientes = () => {
         {/* Filtros por instancia */}
         <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-1">
           <div className="flex gap-2">
+            {/* Chip "Mi Cartera" solo para ejecutivos (no canManage) */}
+            {!canManage && (
+              <FilterChip
+                active={soloMios}
+                onClick={() => setSoloMios((v) => !v)}
+                color="#8b5cf6"
+                highlight
+              >
+                Mi Cartera
+              </FilterChip>
+            )}
             {[
               { key: "all", label: "Todos", color: undefined },
               { key: "CENSO", label: "Censo", color: "#6b7280" },
@@ -128,13 +139,9 @@ const Clientes = () => {
             </div>
           ) : filtered.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center">
-              <p className="text-sm font-semibold">
-                {clientes.length === 0 ? "Sin clientes asignados" : "Sin resultados"}
-              </p>
+              <p className="text-sm font-semibold">Sin resultados</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                {clientes.length === 0
-                  ? "El administrador debe asignarte clientes desde el Panel Admin"
-                  : "Probá con otra búsqueda o filtro"}
+                Probá con otra búsqueda o filtro
               </p>
             </div>
           ) : (
@@ -153,18 +160,23 @@ const Clientes = () => {
                   <div className="min-w-0 flex-1">
                     <h3 className="truncate text-sm font-bold">{c.nombre_comercial}</h3>
                     {c.rubro && <p className="mt-0.5 text-xs text-muted-foreground">{c.rubro}</p>}
-                    {canManage && c.ejecutivo_nombre && (
-                      <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-primary">
-                        <User className="h-3 w-3" />{c.ejecutivo_nombre}
+                    {/* Ejecutivo asignado: visible para canManage y para ejecutivos cuando no es su cliente */}
+                    {c.ejecutivo_nombre && (canManage || c.ejecutivo_id !== user?.id) && (
+                      <p className={cn(
+                        "mt-0.5 flex items-center gap-1 text-[11px] font-semibold",
+                        c.ejecutivo_id === user?.id ? "text-primary" : "text-muted-foreground"
+                      )}>
+                        <User className="h-3 w-3" />
+                        {c.ejecutivo_id === user?.id ? "Mi cliente" : c.ejecutivo_nombre}
                       </p>
                     )}
                   </div>
                   <InstanciaBadge instancia={c.instancia} />
                 </div>
-                {/* Aviso solo para ejecutivos: cliente creado por ellos pero aún sin asignar */}
+                {/* Aviso CENSO para ejecutivos */}
                 {!canManage && c.instancia === "CENSO" && (
                   <p className="mt-2 rounded-xl bg-amber-100 px-3 py-1.5 text-[11px] font-semibold text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                    ⏳ Pendiente de asignación — solicitá a tu supervisor que te lo asigne
+                    ⏳ En CENSO — sin ejecutivo asignado aún
                   </p>
                 )}
 
@@ -220,15 +232,18 @@ const InstanciaBadge = ({ instancia }: { instancia: string | null }) => (
   </span>
 );
 
-const FilterChip = ({ children, active, onClick, color }: { children: React.ReactNode; active: boolean; onClick: () => void; color?: string }) => (
+const FilterChip = ({ children, active, onClick, color, highlight }: { children: React.ReactNode; active: boolean; onClick: () => void; color?: string; highlight?: boolean }) => (
   <button
     onClick={onClick}
     className={cn(
       "shrink-0 rounded-full border px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-smooth",
-      active ? "border-primary bg-primary text-primary-foreground shadow-card" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+      active && highlight ? "border-violet-600 bg-violet-600 text-white shadow-card"
+      : active ? "border-primary bg-primary text-primary-foreground shadow-card"
+      : highlight ? "border-violet-300 bg-violet-50 text-violet-700 hover:border-violet-500 dark:bg-violet-950/30 dark:text-violet-300"
+      : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
     )}
   >
-    {color && !active && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: color }} />}
+    {color && !active && !highlight && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: color }} />}
     {children}
   </button>
 );
