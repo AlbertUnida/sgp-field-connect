@@ -77,12 +77,25 @@ const Clientes = () => {
         c.nombre_comercial.toLowerCase().includes(q.toLowerCase()) ||
         (c.rubro ?? "").toLowerCase().includes(q.toLowerCase()) ||
         (c.ciudad ?? "").toLowerCase().includes(q.toLowerCase());
-      const matchF = filter === "all" || (c.instancia ?? "CENSO") === filter;
-      // Chip "Mi Cartera": solo los asignados al ejecutivo actual
-      const matchMios = !soloMios || c.ejecutivo_id === user?.id;
-      return matchQ && matchF && matchMios;
+
+      let matchF: boolean;
+      if (canManage) {
+        // Admin / supervisor: filtro normal por instancia
+        matchF = filter === "all" || (c.instancia ?? "CENSO") === filter;
+      } else if (soloMios) {
+        // "Mi Cartera" activo: solo los propios, con filtro de instancia aplicado
+        matchF = (filter === "all" || (c.instancia ?? "CENSO") === filter) && c.ejecutivo_id === user?.id;
+      } else if (filter === "all") {
+        // TODOS: ver todos los clientes del sistema (modo consulta/deduplicación)
+        matchF = true;
+      } else {
+        // Filtro por instancia específica: solo los propios en esa instancia
+        matchF = (c.instancia ?? "CENSO") === filter && c.ejecutivo_id === user?.id;
+      }
+
+      return matchQ && matchF;
     });
-  }, [clientes, q, filter, soloMios, user]);
+  }, [clientes, q, filter, soloMios, user, canManage]);
 
   return (
     <>
