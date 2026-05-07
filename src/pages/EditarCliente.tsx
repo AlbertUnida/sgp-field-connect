@@ -125,7 +125,7 @@ const EditarCliente = () => {
 
     setGuardando(true);
 
-    const { error } = await supabase.from("clientes").update({
+    const { error, count } = await supabase.from("clientes").update({
       nombre_comercial: form.nombre_comercial.trim(),
       razon_social: form.razon_social.trim() || null,
       ruc: form.ruc.trim() || null,
@@ -141,10 +141,16 @@ const EditarCliente = () => {
       categoria_id: form.categoria_id || null,
       rubro_id: form.rubro_id || null,
       sub_rubro_id: form.sub_rubro_id || null,
-    }).eq("id", id);
+    }, { count: "exact" }).eq("id", id);
 
     if (error) {
       toast.error("Error al guardar: " + error.message);
+      setGuardando(false);
+      return;
+    }
+
+    if (count === 0) {
+      toast.error("No se pudo guardar: sin permiso de escritura. Pedile al administrador que ejecute la migración de permisos en Supabase.");
       setGuardando(false);
       return;
     }
