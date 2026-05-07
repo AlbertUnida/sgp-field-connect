@@ -22,6 +22,7 @@ interface ClienteReal {
   ultima_gestion: string | null;
   ejecutivo_nombre: string | null;
   ejecutivo_id: string | null;
+  creado_por: string | null;
 }
 
 const Clientes = () => {
@@ -44,7 +45,7 @@ const Clientes = () => {
 
     let query = supabase
       .from("clientes")
-      .select("id, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion, ejecutivo:ejecutivo_id(nombre, apellido)")
+      .select("id, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion, creado_por, ejecutivo:ejecutivo_id(nombre, apellido)")
       .eq("activo", true)
       .order("nombre_comercial");
 
@@ -60,6 +61,7 @@ const Clientes = () => {
     const mapped = (data ?? []).map((c: any) => ({
       ...c,
       ejecutivo_id: c.ejecutivo_id ?? null,
+      creado_por: c.creado_por ?? null,
       ejecutivo_nombre: c.ejecutivo
         ? `${c.ejecutivo.nombre ?? ""} ${c.ejecutivo.apellido ?? ""}`.trim()
         : null,
@@ -84,8 +86,11 @@ const Clientes = () => {
       } else if (filter === "all") {
         // TODOS: consulta global para evitar duplicados
         matchF = true;
+      } else if (filter === "CENSO") {
+        // CENSO: ejecutivo ve los que él creó (ejecutivo_id es null hasta que se asigne)
+        matchF = c.instancia === "CENSO" && c.creado_por === user?.id;
       } else {
-        // Filtro por instancia: ejecutivo solo ve los suyos
+        // Otras instancias: ejecutivo solo ve los suyos (por ejecutivo_id asignado)
         matchF = (c.instancia ?? "CENSO") === filter && c.ejecutivo_id === user?.id;
       }
 
