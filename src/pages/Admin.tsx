@@ -244,9 +244,20 @@ const Admin = () => {
   const asignarDesdeAdmin = async (clienteId: string) => {
     const ejecutivoId = asignaciones[clienteId];
     if (!ejecutivoId) { toast.error("Seleccioná un ejecutivo"); return; }
-    const cliente = clientesCenso.find((c) => c.id === clienteId);
-    if (!cliente?.tarifa_mensual) { toast.error("El cliente debe tener Tarifa Mensual antes de asignarlo"); return; }
     setAsignando(clienteId);
+
+    // Consultar tarifa directamente en la BD para no depender de datos en caché
+    const { data: clienteActual } = await supabase
+      .from("clientes")
+      .select("tarifa_mensual, nombre_comercial")
+      .eq("id", clienteId)
+      .single();
+
+    if (!clienteActual?.tarifa_mensual) {
+      toast.error("El cliente debe tener Tarifa Mensual antes de asignarlo");
+      setAsignando(null);
+      return;
+    }
     const { error } = await supabase.from("clientes").update({
       ejecutivo_id: ejecutivoId, instancia: "COMERCIAL",
     }).eq("id", clienteId);
@@ -646,7 +657,19 @@ const Admin = () => {
 
             <div className="flex items-center justify-between">
               <p className="text-sm font-bold">{clientesCenso.length} pendientes</p>
-              <Link to="/app/nuevo-cliente" className="text-xs font-semibold text-primary">+ Nuevo cliente</Link>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={cargarCenso}
+                  disabled={loadingCenso}
+                  className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground transition-smooth"
+                >
+                  <svg className={cn("h-3.5 w-3.5", loadingCenso && "animate-spin")} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" strokeLinecap="round"/>
+                  </svg>
+                  Actualizar
+                </button>
+                <Link to="/app/nuevo-cliente" className="text-xs font-semibold text-primary">+ Nuevo cliente</Link>
+              </div>
             </div>
 
             {loadingCenso ? (
