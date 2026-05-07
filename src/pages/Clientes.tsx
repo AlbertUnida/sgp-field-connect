@@ -33,7 +33,6 @@ const Clientes = () => {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<string>("all");
-  const [soloMios, setSoloMios] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -80,22 +79,19 @@ const Clientes = () => {
 
       let matchF: boolean;
       if (canManage) {
-        // Admin / supervisor: filtro normal por instancia
+        // Admin / supervisor: filtro normal sin restricciones
         matchF = filter === "all" || (c.instancia ?? "CENSO") === filter;
-      } else if (soloMios) {
-        // "Mi Cartera" activo: solo los propios, con filtro de instancia aplicado
-        matchF = (filter === "all" || (c.instancia ?? "CENSO") === filter) && c.ejecutivo_id === user?.id;
       } else if (filter === "all") {
-        // TODOS: ver todos los clientes del sistema (modo consulta/deduplicación)
+        // TODOS: consulta global para evitar duplicados
         matchF = true;
       } else {
-        // Filtro por instancia específica: solo los propios en esa instancia
+        // Filtro por instancia: ejecutivo solo ve los suyos
         matchF = (c.instancia ?? "CENSO") === filter && c.ejecutivo_id === user?.id;
       }
 
       return matchQ && matchF;
     });
-  }, [clientes, q, filter, soloMios, user, canManage]);
+  }, [clientes, q, filter, user, canManage]);
 
   return (
     <>
@@ -119,17 +115,6 @@ const Clientes = () => {
         {/* Filtros por instancia */}
         <div className="-mx-4 mt-4 overflow-x-auto px-4 pb-1">
           <div className="flex gap-2">
-            {/* Chip "Mi Cartera" solo para ejecutivos (no canManage) */}
-            {!canManage && (
-              <FilterChip
-                active={soloMios}
-                onClick={() => setSoloMios((v) => !v)}
-                color="#8b5cf6"
-                highlight
-              >
-                Mi Cartera
-              </FilterChip>
-            )}
             {[
               { key: "all", label: "Todos", color: undefined },
               { key: "CENSO", label: "Censo", color: "#6b7280" },
@@ -245,18 +230,15 @@ const InstanciaBadge = ({ instancia }: { instancia: string | null }) => (
   </span>
 );
 
-const FilterChip = ({ children, active, onClick, color, highlight }: { children: React.ReactNode; active: boolean; onClick: () => void; color?: string; highlight?: boolean }) => (
+const FilterChip = ({ children, active, onClick, color }: { children: React.ReactNode; active: boolean; onClick: () => void; color?: string }) => (
   <button
     onClick={onClick}
     className={cn(
       "shrink-0 rounded-full border px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-wide transition-smooth",
-      active && highlight ? "border-violet-600 bg-violet-600 text-white shadow-card"
-      : active ? "border-primary bg-primary text-primary-foreground shadow-card"
-      : highlight ? "border-violet-300 bg-violet-50 text-violet-700 hover:border-violet-500 dark:bg-violet-950/30 dark:text-violet-300"
-      : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+      active ? "border-primary bg-primary text-primary-foreground shadow-card" : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
     )}
   >
-    {color && !active && !highlight && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: color }} />}
+    {color && !active && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ backgroundColor: color }} />}
     {children}
   </button>
 );
