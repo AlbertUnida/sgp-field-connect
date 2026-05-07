@@ -168,6 +168,8 @@ const ClienteDetalle = () => {
   });
 
   const esPropio = cliente?.ejecutivo_id === user?.id;
+  // Ejecutivo que creó el cliente mientras está en CENSO (puede editar para cargar tarifa)
+  const esCreadorCenso = cliente?.creado_por === user?.id && cliente?.instancia === "CENSO";
 
   useEffect(() => {
     if (!id) return;
@@ -513,7 +515,7 @@ const ClienteDetalle = () => {
             <Link to="/app/clientes" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10">
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            {(canManage || esPropio) && (
+            {(canManage || esPropio || esCreadorCenso) && (
               <Link
                 to={`/app/clientes/${id}/editar`}
                 className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-2 text-[11px] font-bold uppercase tracking-wide hover:bg-white/20 transition-smooth"
@@ -557,12 +559,14 @@ const ClienteDetalle = () => {
 
       <div className="space-y-4 px-4 pt-4 pb-8">
 
-        {/* Banner informativo para ejecutivo que ve un cliente propio en CENSO (sin ejecutivo asignado aún) */}
-        {!canManage && !esPropio && instancia === "CENSO" && (
-          <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-1 dark:bg-amber-950/30 dark:border-amber-700">
+        {/* Banner para ejecutivo creador: cliente en CENSO pendiente de asignación */}
+        {esCreadorCenso && (
+          <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-2 dark:bg-amber-950/30 dark:border-amber-700">
             <p className="text-sm font-bold text-amber-800 dark:text-amber-300">⏳ Pendiente de asignación</p>
             <p className="text-xs text-amber-700 dark:text-amber-400">
-              Este cliente está en CENSO esperando ser asignado. Avisá a tu supervisor o administrador para que te lo asigne y puedas comenzar a gestionarlo.
+              {!cliente?.tarifa_mensual
+                ? "Este cliente no tiene tarifa cargada. Usá el botón Editar para agregarla — es obligatoria para que tu supervisor pueda asignarte el cliente."
+                : "La tarifa está cargada ✅. Avisá a tu supervisor para que te asigne este cliente y puedas comenzar a gestionarlo."}
             </p>
           </section>
         )}

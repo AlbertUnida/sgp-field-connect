@@ -67,8 +67,13 @@ const EditarCliente = () => {
         return;
       }
 
-      // Verificar permiso: ejecutivo asignado o canManage (admin/supervisor)
-      if (!canManage && cliente.ejecutivo_id !== user?.id) {
+      // Verificar permiso:
+      // - canManage (admin/supervisor): siempre puede
+      // - ejecutivo asignado (ejecutivo_id): puede editar su cliente
+      // - ejecutivo creador (creado_por) + instancia CENSO: puede editar para cargar tarifa
+      const esAsignado = cliente.ejecutivo_id === user?.id;
+      const esCreadorCenso = cliente.creado_por === user?.id && cliente.instancia === "CENSO";
+      if (!canManage && !esAsignado && !esCreadorCenso) {
         toast.error("No tenés permiso para editar este cliente");
         navigate(-1);
         return;
