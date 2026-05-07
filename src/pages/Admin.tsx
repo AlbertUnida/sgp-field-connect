@@ -89,6 +89,9 @@ const Admin = () => {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [metas, setMetas] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState<string | null>(null);
+  const [nombresEdit, setNombresEdit] = useState<Record<string, string>>({});
+  const [apellidosEdit, setApellidosEdit] = useState<Record<string, string>>({});
+  const [savingNombre, setSavingNombre] = useState<string | null>(null);
   const [showNuevoUser, setShowNuevoUser] = useState(false);
   const [nuevoEmail, setNuevoEmail] = useState("");
   const [nuevoNombre, setNuevoNombre] = useState("");
@@ -153,8 +156,16 @@ const Admin = () => {
     const lista: EjecutivoConMeta[] = (profiles || []).map((p) => ({ ...p, meta_actual: metasMap[p.id] ?? null }));
     setEjecutivos(lista);
     const metasInit: Record<string, string> = {};
-    lista.forEach((e) => { metasInit[e.id] = e.meta_actual ? String(e.meta_actual) : ""; });
+    const nombresInit: Record<string, string> = {};
+    const apellidosInit: Record<string, string> = {};
+    lista.forEach((e) => {
+      metasInit[e.id] = e.meta_actual ? String(e.meta_actual) : "";
+      nombresInit[e.id] = e.nombre ?? "";
+      apellidosInit[e.id] = e.apellido ?? "";
+    });
     setMetas(metasInit);
+    setNombresEdit(nombresInit);
+    setApellidosEdit(apellidosInit);
     setLoading(false);
   };
 
@@ -169,6 +180,19 @@ const Admin = () => {
     if (error) toast.error("Error al guardar la meta");
     else { toast.success("Meta guardada"); await cargarEjecutivos(); }
     setSaving(null);
+  };
+
+  const guardarNombre = async (ejecutivoId: string) => {
+    const nombre = nombresEdit[ejecutivoId]?.trim();
+    if (!nombre) { toast.error("El nombre no puede estar vacío"); return; }
+    setSavingNombre(ejecutivoId);
+    const { error } = await supabase.from("profiles").update({
+      nombre,
+      apellido: apellidosEdit[ejecutivoId]?.trim() || null,
+    }).eq("id", ejecutivoId);
+    if (error) toast.error("Error al guardar: " + error.message);
+    else { toast.success("Nombre actualizado ✅"); await cargarEjecutivos(); }
+    setSavingNombre(null);
   };
 
   const cambiarRol = async (ejecutivoId: string, rol: string) => {
@@ -457,7 +481,7 @@ const Admin = () => {
           {([
             { key: "ejecutivos",  label: "Equipo",    icon: Users,      adminOnly: true },
             { key: "censo",       label: "CENSO",     icon: Building2,  adminOnly: false },
-            { key: "catalogo",    label: "Catálogo",  icon: Tag,        adminOnly: false },
+            { key: "catalogo",    label: "Categoría", icon: Tag,        adminOnly: false },
             { key: "seguimiento", label: "Seguim.",   icon: BarChart2,  adminOnly: false },
           ] as const).filter((t) => !t.adminOnly || isAdmin).map(({ key, label, icon: Icon }) => (
             <button
@@ -552,7 +576,35 @@ const Admin = () => {
                       </button>
                       {isOpen && (
                         <div className="border-t border-border px-4 pb-4 space-y-4">
-                          <div className="space-y-1.5 pt-4">
+                          {/* Editar nombre y apellido */}
+                          <div className="space-y-2 pt-4">
+                            <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Nombre y Apellido</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <Input
+                                placeholder="Nombre"
+                                value={nombresEdit[ej.id] ?? ""}
+                                onChange={(e) => setNombresEdit((p) => ({ ...p, [ej.id]: e.target.value }))}
+                                className="h-10 text-sm"
+                              />
+                              <Input
+                                placeholder="Apellido"
+                                value={apellidosEdit[ej.id] ?? ""}
+                                onChange={(e) => setApellidosEdit((p) => ({ ...p, [ej.id]: e.target.value }))}
+                                className="h-10 text-sm"
+                              />
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => guardarNombre(ej.id)}
+                              disabled={savingNombre === ej.id}
+                              className="w-full h-9 gap-1.5"
+                            >
+                              {savingNombre === ej.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+                              Guardar nombre
+                            </Button>
+                          </div>
+                          <div className="space-y-1.5">
                             <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Meta {MESES[MES_ACTUAL - 1]} (Gs.)</Label>
                             {ej.meta_actual && <p className="text-xs text-success font-semibold">Actual: {formatPYGLocal(ej.meta_actual)}</p>}
                             <div className="flex gap-2">
