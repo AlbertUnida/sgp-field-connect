@@ -55,6 +55,18 @@ interface Gestion {
   ejecutivo: { nombre: string; apellido: string } | null;
 }
 
+interface CobroCliente {
+  id: number;
+  monto: number;
+  metodo_pago: string | null;
+  modalidad: string | null;
+  fecha_cobro: string;
+  periodo_desde: string | null;
+  periodo_hasta: string | null;
+  notas: string | null;
+  registrado_por_nombre: string | null;
+}
+
 interface HistorialInstancia {
   id: number;
   instancia_anterior: string | null;
@@ -110,6 +122,10 @@ const ClienteDetalle = () => {
   // Historial de instancias
   const [historial, setHistorial] = useState<HistorialInstancia[]>([]);
 
+  // Historial de cobros
+  const [cobrosCliente, setCobrosCliente] = useState<CobroCliente[]>([]);
+  const [loadingCobros, setLoadingCobros] = useState(false);
+
   // Cobro
   const [showCobro, setShowCobro] = useState(false);
   const [guardandoCobro, setGuardandoCobro] = useState(false);
@@ -158,6 +174,7 @@ const ClienteDetalle = () => {
     cargarCliente();
     cargarGestiones();
     cargarHistorial();
+    cargarCobros();
   }, [id]);
 
   useEffect(() => {
@@ -211,6 +228,28 @@ const ClienteDetalle = () => {
       .eq("cliente_id", id)
       .order("created_at", { ascending: true });
     setHistorial(data ?? []);
+  };
+
+  const cargarCobros = async () => {
+    setLoadingCobros(true);
+    const { data } = await supabase
+      .from("cobros")
+      .select(`
+        id, monto, metodo_pago, modalidad, fecha_cobro,
+        periodo_desde, periodo_hasta, notas,
+        registrado_por:registrado_por(nombre, apellido)
+      `)
+      .eq("cliente_id", id)
+      .order("fecha_cobro", { ascending: false });
+
+    const mapped = (data ?? []).map((c: any) => ({
+      ...c,
+      registrado_por_nombre: c.registrado_por
+        ? `${c.registrado_por.nombre ?? ""} ${c.registrado_por.apellido ?? ""}`.trim()
+        : null,
+    }));
+    setCobrosCliente(mapped);
+    setLoadingCobros(false);
   };
 
   const cargarGestiones = async () => {
@@ -322,7 +361,7 @@ const ClienteDetalle = () => {
     setCobro({ monto: "", metodo_pago: "efectivo", modalidad: "mensual",
       fecha_cobro: hoy, periodo_desde: hoy, periodo_hasta: "", referencia: "", notas: "" });
     setShowCobro(false);
-    await cargarCliente();
+    await Promise.all([cargarCliente(), cargarCobros()]);
     await cargarHistorial();
     setGuardandoCobro(false);
   };
@@ -987,6 +1026,81 @@ const ClienteDetalle = () => {
             )}
           </section>
         )}
+
+        {/* Historial de cobros */}
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-bold">Historial de cobros</h2>
+            {cobrosCliente.length > 0 && (
+              <span className="text-[11px] font-semibold text-muted-foreground">
+                {cobrosCliente.length} registro{cobrosCliente.length !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+
+          {loadingCobros ? (
+            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          ) : cobrosCliente.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-border bg-card p-6 text-center">
+              <p className="text-sm text-muted-foreground">Sin cobros registrados aún</p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {cobrosCliente.map((c) => {
+                const fecha = new Date(c.fecha_cobro + "T00:00:00");
+                const METODO: Record<string, string> = {
+                  efectivo: "💵 Efectivo",
+                  transferencia: "🏦 Transferencia",
+                  cheque: "📋 Cheque",
+                  tarjeta: "💳 Tarjeta",
+                };
+                const MODALIDAD: Record<string, string> = {
+                  mensual: "Mensual",
+                  trimestral: "Trimestral",
+                  semestral: "Semestral",
+                  anual: "Anual",
+                };
+                return (
+                  <div key={c.id} className="rounded-2xl border border-border bg-card p-4 shadow-card">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-lg font-bold tabular-nums text-primary">{formatPYG(c.monto)}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {fecha.toLocaleDateString("es-PY", { day: "2-digit", month: "long", year: "numeric" })}
+                        </p>
+                      </div>
+                      <div className="text-right space-y-1">
+                        <span className="block rounded-full bg-success/10 px-2.5 py-0.5 text-[10px] font-bold text-success">
+                          {MODALIDAD[c.modalidad ?? "mensual"] ?? c.modalidad}
+                        </span>
+                        <span className="block text-[11px] text-muted-foreground">
+                          {METODO[c.metodo_pago ?? "efectivo"] ?? c.metodo_pago}
+                        </span>
+                      </div>
+                    </div>
+
+                    {(c.periodo_desde || c.periodo_hasta) && (
+                      <p className="mt-2 text-[11px] text-muted-foreground flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        Período: {c.periodo_desde ?? "—"} → {c.periodo_hasta ?? "—"}
+                      </p>
+                    )}
+
+                    {c.notas && (
+                      <p className="mt-1.5 text-[11px] text-muted-foreground italic">"{c.notas}"</p>
+                    )}
+
+                    {c.registrado_por_nombre && (
+                      <p className="mt-1.5 text-[10px] text-muted-foreground flex items-center gap-1">
+                        <User className="h-3 w-3" /> Registrado por {c.registrado_por_nombre}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
         {/* Historial de instancias */}
         {historial.length > 0 && (

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Calendar, CheckCircle2, Clock, MapPin, Target, TrendingUp, Loader2, AlertTriangle, PhoneCall, CalendarClock, ChevronRight } from "lucide-react";
+import { Calendar, CheckCircle2, Clock, MapPin, Target, TrendingUp, Loader2, AlertTriangle, PhoneCall, CalendarClock, ChevronRight, Users, BarChart2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { formatPYG, relativeDate } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
@@ -26,7 +26,7 @@ function addBusinessHours(start: Date, hours: number): Date {
 
 const Inicio = () => {
   const { user } = useAuth();
-  const { profile, nombreCompleto } = useProfile();
+  const { profile, nombreCompleto, canManage } = useProfile();
   const navigate = useNavigate();
 
   const [meta, setMeta] = useState<{ monto_meta: number } | null>(null);
@@ -40,6 +40,16 @@ const Inicio = () => {
   const [contactosVencidos, setContactosVencidos] = useState(0);
   const [proximosVencimientos, setProximosVencimientos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // KPIs del equipo (solo canManage)
+  const [equipoKpis, setEquipoKpis] = useState({
+    totalCobrado: 0,
+    totalMeta: 0,
+    totalClientes: 0,
+    totalEjecutivos: 0,
+    visitasVencidasEquipo: 0,
+    contactosVencidosEquipo: 0,
+  });
 
   useEffect(() => {
     if (!user) return;
@@ -108,13 +118,34 @@ const Inicio = () => {
       .eq("activo", true);
     setTotalAsignados(countAsignados ?? 0);
 
+    // ── KPIs del equipo (solo canManage) ────────────────────
+    if (canManage) {
+      const primerDia = `${ANIO_ACTUAL}-${String(MES_ACTUAL).padStart(2, "0")}-01`;
+      const [{ data: cobrosEquipo }, { data: metasEquipo }, { count: totalClientesEquipo }, { data: perfiles }] = await Promise.all([
+        supabase.from("cobros").select("monto").gte("fecha_cobro", primerDia),
+        supabase.from("metas").select("monto_meta").eq("mes", MES_ACTUAL).eq("anio", ANIO_ACTUAL),
+        supabase.from("clientes").select("id", { count: "exact", head: true }).eq("activo", true).not("instancia", "eq", "CENSO"),
+        supabase.from("profiles").select("id").eq("rol", "ejecutivo").eq("activo", true),
+      ]);
+      setEquipoKpis((prev) => ({
+        ...prev,
+        totalCobrado: cobrosEquipo?.reduce((s, c) => s + (c.monto || 0), 0) ?? 0,
+        totalMeta: metasEquipo?.reduce((s, m) => s + (m.monto_meta || 0), 0) ?? 0,
+        totalClientes: totalClientesEquipo ?? 0,
+        totalEjecutivos: perfiles?.length ?? 0,
+      }));
+    }
+
     // ── Alertas de vencimiento ──────────────────────────────
-    const { data: clientesGestion } = await supabase
+    let alertasQuery = supabase
       .from("clientes")
       .select("id, rubro_rel:rubro_id(dias_visita)")
-      .eq("ejecutivo_id", user!.id)
       .eq("activo", true)
       .not("instancia", "eq", "CENSO");
+
+    if (!canManage) alertasQuery = alertasQuery.eq("ejecutivo_id", user!.id);
+
+    const { data: clientesGestion } = await alertasQuery;
 
     if (clientesGestion && clientesGestion.length > 0) {
       const ids = clientesGestion.map((c) => c.id);
@@ -172,21 +203,27 @@ const Inicio = () => {
 
       setVisitasVencidas(vVisitas);
       setContactosVencidos(vContactos);
+      if (canManage) {
+        setEquipoKpis((prev) => ({ ...prev, visitasVencidasEquipo: vVisitas, contactosVencidosEquipo: vContactos }));
+      }
     }
 
     // ── Vencimientos próximos (30 días) ─────────────────────
     const hoy30 = new Date();
     hoy30.setDate(hoy30.getDate() + 30);
     const hoyStr = new Date().toISOString().split("T")[0];
-    const { data: vencData } = await supabase
+    let vencQuery = supabase
       .from("clientes")
-      .select("id, nombre_comercial, ciudad, fecha_vencimiento, instancia")
-      .eq("ejecutivo_id", user!.id)
+      .select("id, nombre_comercial, ciudad, fecha_vencimiento, instancia, ejecutivo:ejecutivo_id(nombre, apellido)")
       .eq("activo", true)
       .not("instancia", "eq", "CENSO")
       .not("fecha_vencimiento", "is", null)
       .lte("fecha_vencimiento", hoy30.toISOString().split("T")[0])
       .order("fecha_vencimiento");
+
+    if (!canManage) vencQuery = vencQuery.eq("ejecutivo_id", user!.id);
+
+    const { data: vencData } = await vencQuery;
     setProximosVencimientos(vencData ?? []);
 
     setLoading(false);
@@ -214,6 +251,57 @@ const Inicio = () => {
         </div>
       ) : (
         <div className="space-y-5 px-4 pt-5 pb-8">
+
+          {/* Dashboard del equipo — solo canManage */}
+          {canManage && (
+            <section className="animate-fade-in rounded-2xl gradient-primary p-5 text-primary-foreground shadow-elevated">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-accent">Resumen del equipo</p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums">{formatPYG(equipoKpis.totalCobrado)}</p>
+                  {equipoKpis.totalMeta > 0 ? (
+                    <p className="text-xs text-primary-foreground/70">
+                      de {formatPYG(equipoKpis.totalMeta)} en meta —{" "}
+                      <span className="font-bold text-accent">
+                        {Math.round((equipoKpis.totalCobrado / equipoKpis.totalMeta) * 100)}%
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-primary-foreground/70">Sin metas asignadas este mes</p>
+                  )}
+                </div>
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/20 text-accent">
+                  <BarChart2 className="h-7 w-7" />
+                </div>
+              </div>
+
+              {equipoKpis.totalMeta > 0 && (
+                <div className="mb-4 h-2 overflow-hidden rounded-full bg-white/15">
+                  <div
+                    className="h-full rounded-full gradient-accent"
+                    style={{ width: `${Math.min(Math.round((equipoKpis.totalCobrado / equipoKpis.totalMeta) * 100), 100)}%` }}
+                  />
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-xl bg-white/10 py-2.5">
+                  <p className="text-lg font-bold tabular-nums">{equipoKpis.totalClientes}</p>
+                  <p className="text-[10px] font-semibold text-primary-foreground/70 uppercase tracking-wide">Clientes</p>
+                </div>
+                <div className="rounded-xl bg-white/10 py-2.5">
+                  <p className="text-lg font-bold tabular-nums">{equipoKpis.totalEjecutivos}</p>
+                  <p className="text-[10px] font-semibold text-primary-foreground/70 uppercase tracking-wide">Ejecutivos</p>
+                </div>
+                <Link to="/app/admin" className="rounded-xl bg-white/10 py-2.5 block hover:bg-white/20 transition-smooth">
+                  <p className={cn("text-lg font-bold tabular-nums", (equipoKpis.visitasVencidasEquipo + equipoKpis.contactosVencidosEquipo) > 0 ? "text-red-300" : "")}>
+                    {equipoKpis.visitasVencidasEquipo + equipoKpis.contactosVencidosEquipo}
+                  </p>
+                  <p className="text-[10px] font-semibold text-primary-foreground/70 uppercase tracking-wide">Alertas</p>
+                </Link>
+              </div>
+            </section>
+          )}
 
           {/* Tarjeta de meta */}
           <section className="animate-fade-in rounded-2xl border border-border bg-card p-5 shadow-card">
@@ -368,6 +456,11 @@ const Inicio = () => {
                           {c.ciudad && `${c.ciudad} · `}
                           {fv.toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
                         </p>
+                        {canManage && c.ejecutivo && (
+                          <p className="text-[10px] font-semibold text-primary mt-0.5">
+                            {`${c.ejecutivo.nombre ?? ""} ${c.ejecutivo.apellido ?? ""}`.trim()}
+                          </p>
+                        )}
                       </div>
                       <div className="shrink-0 text-right">
                         <span className={cn(
