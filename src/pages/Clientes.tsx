@@ -45,7 +45,7 @@ const Clientes = () => {
 
     let query = supabase
       .from("clientes")
-      .select("id, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion, creado_por, ejecutivo:ejecutivo_id(nombre, apellido)")
+      .select("id, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion, creado_por, ejecutivo_id, ejecutivo:ejecutivo_id(nombre, apellido)")
       .eq("activo", true)
       .order("nombre_comercial");
 
