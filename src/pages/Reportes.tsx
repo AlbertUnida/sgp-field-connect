@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, Trophy, Users, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { TrendingUp, TrendingDown, Trophy, Users, Loader2, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { formatPYG } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useProfile } from "@/hooks/useProfile";
 import { useAuth } from "@/contexts/AuthContext";
+import * as XLSX from "xlsx";
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
@@ -153,6 +154,55 @@ const Reportes = () => {
 
   const sortedExec = [...ejecutivos].sort((a, b) => b.cobrado - a.cobrado);
 
+  const exportarExcel = () => {
+    const nombreMes = `${MESES[mes - 1]} ${anio}`;
+    const wb = XLSX.utils.book_new();
+
+    // ── Hoja 1: Resumen ──────────────────────────────────────────
+    const wsResumenData = [
+      ["Reporte de Gestión Comercial — SGP"],
+      [`Período: ${nombreMes}`],
+      [],
+      ["RESUMEN GENERAL", ""],
+      ["Total cobrado", totalCobrado],
+      ["Meta total equipo", totalMeta],
+      ["Cumplimiento (%)", totalMeta > 0 ? Math.round((totalCobrado / totalMeta) * 100) : "Sin meta"],
+      [],
+      ["CARTERA ACTIVA POR INSTANCIA", ""],
+      ["Instancia", "Cantidad", "% del total"],
+      ...embudo.map(({ instancia, count }) => [
+        INSTANCIA_CONFIG[instancia]?.label ?? instancia,
+        count,
+        totalClientes > 0 ? `${Math.round((count / totalClientes) * 100)}%` : "0%",
+      ]),
+      ["TOTAL", totalClientes, "100%"],
+    ];
+    const wsResumen = XLSX.utils.aoa_to_sheet(wsResumenData);
+    wsResumen["!cols"] = [{ wch: 30 }, { wch: 18 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, wsResumen, "Resumen");
+
+    // ── Hoja 2: Performance por ejecutivo ────────────────────────
+    const wsExecData = [
+      [`Performance por ejecutivo — ${nombreMes}`],
+      [],
+      ["Ejecutivo", "Meta (Gs.)", "Cobrado (Gs.)", "Cumplimiento (%)", "Clientes activos"],
+      ...sortedExec.map((e) => {
+        const nombreCompleto = [e.nombre, e.apellido].filter(Boolean).join(" ");
+        const pct = e.meta > 0 ? Math.round((e.cobrado / e.meta) * 100) : "Sin meta";
+        return [nombreCompleto, e.meta, e.cobrado, pct, e.clientes];
+      }),
+      [],
+      ["TOTAL EQUIPO", totalMeta, totalCobrado, totalMeta > 0 ? `${teamPct}%` : "—", ""],
+    ];
+    const wsExec = XLSX.utils.aoa_to_sheet(wsExecData);
+    wsExec["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, wsExec, "Performance");
+
+    // ── Guardar ──────────────────────────────────────────────────
+    const nombreArchivo = `SGP_Reporte_${MESES[mes - 1]}_${anio}.xlsx`;
+    XLSX.writeFile(wb, nombreArchivo);
+  };
+
   return (
     <>
       <AppHeader title="Reportes" />
@@ -171,16 +221,27 @@ const Reportes = () => {
             <p className="text-[10px] text-muted-foreground font-medium">Mes en curso</p>
           )}
         </div>
-        <button
-          onClick={irMesSiguiente}
-          disabled={esMesActual}
-          className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-foreground active:scale-95 transition-transform",
-            esMesActual && "opacity-30 cursor-not-allowed"
+        <div className="flex items-center gap-1">
+          {canManage && !loading && (
+            <button
+              onClick={exportarExcel}
+              title="Exportar Excel"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-emerald-600 active:scale-95 transition-transform hover:bg-emerald-50"
+            >
+              <Download className="h-4 w-4" />
+            </button>
           )}
-        >
-          <ChevronRight className="h-5 w-5" />
-        </button>
+          <button
+            onClick={irMesSiguiente}
+            disabled={esMesActual}
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-foreground active:scale-95 transition-transform",
+              esMesActual && "opacity-30 cursor-not-allowed"
+            )}
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+        </div>
       </div>
 
       {loading ? (

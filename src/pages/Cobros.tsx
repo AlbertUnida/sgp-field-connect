@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, Loader2, Receipt, User, Filter } from "lucide-react";
+import { ChevronLeft, ChevronRight, Loader2, Receipt, User, Filter, Download } from "lucide-react";
+import * as XLSX from "xlsx";
 import { AppHeader } from "@/components/AppHeader";
 import { formatPYG } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
@@ -132,6 +133,41 @@ const Cobros = () => {
     ? null
     : ejecutivos.find((e) => e.id === ejFilter);
 
+  const exportarExcel = () => {
+    const nombreMes = `${MESES[mes - 1]} ${anio}`;
+    const filtroNombre = ejFilter === "todos"
+      ? "Todo el equipo"
+      : (ejecutivos.find((e) => e.id === ejFilter)
+          ? `${ejecutivos.find((e) => e.id === ejFilter)!.nombre} ${ejecutivos.find((e) => e.id === ejFilter)!.apellido ?? ""}`.trim()
+          : "Filtrado");
+
+    const wb = XLSX.utils.book_new();
+
+    const wsData = [
+      ["Cobros del mes — SGP"],
+      [`Período: ${nombreMes}`, canManage ? `Ejecutivo: ${filtroNombre}` : ""],
+      [`Total cobrado: ${formatPYG(totalCobrado)}`, `Cantidad: ${cobros.length} cobros`],
+      [],
+      canManage
+        ? ["Fecha", "Cliente", "Ejecutivo", "Monto (Gs.)", "Método de pago", "Modalidad", "Período desde", "Período hasta", "Notas"]
+        : ["Fecha", "Cliente", "Monto (Gs.)", "Método de pago", "Modalidad", "Período desde", "Período hasta", "Notas"],
+      ...cobros.map((c) =>
+        canManage
+          ? [c.fecha_cobro, c.cliente_nombre, c.ejecutivo_nombre, c.monto, c.metodo_pago ?? "", c.modalidad ?? "", c.periodo_desde ?? "", c.periodo_hasta ?? "", c.notas ?? ""]
+          : [c.fecha_cobro, c.cliente_nombre, c.monto, c.metodo_pago ?? "", c.modalidad ?? "", c.periodo_desde ?? "", c.periodo_hasta ?? "", c.notas ?? ""]
+      ),
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws["!cols"] = canManage
+      ? [{ wch: 14 }, { wch: 28 }, { wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 }]
+      : [{ wch: 14 }, { wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, ws, "Cobros");
+
+    const nombreArchivo = `SGP_Cobros_${MESES[mes - 1]}_${anio}.xlsx`;
+    XLSX.writeFile(wb, nombreArchivo);
+  };
+
   const formatFecha = (iso: string) => {
     const d = new Date(iso + "T12:00:00");
     return d.toLocaleDateString("es-PY", { day: "2-digit", month: "short" });
@@ -164,13 +200,24 @@ const Cobros = () => {
           <span className="text-sm font-bold">
             {MESES[mes - 1]} {anio}
           </span>
-          <button
-            onClick={irMesSiguiente}
-            disabled={esMesActual}
-            className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted transition-colors disabled:opacity-30"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            {!loading && cobros.length > 0 && (
+              <button
+                onClick={exportarExcel}
+                title="Exportar Excel"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 transition-colors"
+              >
+                <Download className="h-4 w-4" />
+              </button>
+            )}
+            <button
+              onClick={irMesSiguiente}
+              disabled={esMesActual}
+              className="flex h-9 w-9 items-center justify-center rounded-full hover:bg-muted transition-colors disabled:opacity-30"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {/* Resumen + filtro ejecutivo */}
