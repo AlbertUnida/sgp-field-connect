@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
+import { ExportModal, RangoFecha } from "@/components/ExportModal";
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
@@ -20,6 +21,7 @@ interface Cobro {
   periodo_hasta: string | null;
   notas: string | null;
   cliente_nombre: string;
+  cliente_rubro: string | null;
   ejecutivo_nombre: string;
   ejecutivo_id: string;
 }
@@ -31,10 +33,28 @@ interface EjecutivoOption {
 }
 
 const METODO_COLORS: Record<string, string> = {
-  efectivo:     "bg-green-100 text-green-700",
-  transferencia:"bg-blue-100 text-blue-700",
-  cheque:       "bg-amber-100 text-amber-700",
+  efectivo:      "bg-green-100 text-green-700",
+  transferencia: "bg-blue-100 text-blue-700",
+  cheque:        "bg-amber-100 text-amber-700",
 };
+
+const mapCobros = (data: any[]): Cobro[] =>
+  data.map((c) => ({
+    id: c.id,
+    monto: c.monto,
+    metodo_pago: c.metodo_pago,
+    modalidad: c.modalidad,
+    fecha_cobro: c.fecha_cobro,
+    periodo_desde: c.periodo_desde,
+    periodo_hasta: c.periodo_hasta,
+    notas: c.notas,
+    cliente_nombre: c.cliente?.nombre_comercial ?? "—",
+    cliente_rubro: c.cliente?.rubro ?? null,
+    ejecutivo_id: c.ejecutivo?.id ?? "",
+    ejecutivo_nombre: c.ejecutivo
+      ? `${c.ejecutivo.nombre ?? ""} ${c.ejecutivo.apellido ?? ""}`.trim()
+      : "—",
+  }));
 
 const Cobros = () => {
   const { user } = useAuth();
@@ -47,6 +67,7 @@ const Cobros = () => {
   const [ejecutivos, setEjecutivos] = useState<EjecutivoOption[]>([]);
   const [ejFilter, setEjFilter] = useState<string>("todos");
   const [showFilter, setShowFilter] = useState(false);
+  const [showExport, setShowExport] = useState(false);
 
   const mesActual = now.getMonth() + 1;
   const anioActual = now.getFullYear();
@@ -78,95 +99,110 @@ const Cobros = () => {
     cargarCobros();
   }, [user, canManage, mes, anio, ejFilter]);
 
-  const cargarCobros = async () => {
-    setLoading(true);
+  const buildQuery = (desde: string, hasta: string) => {
+    // "hasta" es inclusivo: sumamos 1 día para el filtro lt
+    const hastaDate = new Date(hasta + "T23:59:59");
+    hastaDate.setDate(hastaDate.getDate() + 1);
+    const hastaExclusivo = hastaDate.toISOString().slice(0, 10);
 
-    const primerDia = `${anio}-${String(mes).padStart(2, "0")}-01`;
-    const siguienteMes = mes === 12 ? 1 : mes + 1;
-    const siguienteAnio = mes === 12 ? anio + 1 : anio;
-    const primerDiaSiguiente = `${siguienteAnio}-${String(siguienteMes).padStart(2, "0")}-01`;
-
-    let query = supabase
+    let q = supabase
       .from("cobros")
       .select(`
         id, monto, metodo_pago, modalidad, fecha_cobro,
         periodo_desde, periodo_hasta, notas,
-        cliente:cliente_id(nombre_comercial),
+        cliente:cliente_id(nombre_comercial, rubro),
+        ejecutivo:ejecutivo_id(id, nombre, apellido)
+      `)
+      .gte("fecha_cobro", desde)
+      .lt("fecha_cobro", hastaExclusivo)
+      .order("fecha_cobro", { ascending: false });
+
+    if (!canManage) {
+      q = q.eq("ejecutivo_id", user!.id);
+    } else if (ejFilter !== "todos") {
+      q = q.eq("ejecutivo_id", ejFilter);
+    }
+    return q;
+  };
+
+  const cargarCobros = async () => {
+    setLoading(true);
+    const primerDia = `${anio}-${String(mes).padStart(2, "0")}-01`;
+    const mesNext = mes === 12 ? 1 : mes + 1;
+    const anioNext = mes === 12 ? anio + 1 : anio;
+    const ultimoDia = `${anioNext}-${String(mesNext).padStart(2, "0")}-01`;
+
+    // Usamos el rango del mes actual de la pantalla
+    let q = supabase
+      .from("cobros")
+      .select(`
+        id, monto, metodo_pago, modalidad, fecha_cobro,
+        periodo_desde, periodo_hasta, notas,
+        cliente:cliente_id(nombre_comercial, rubro),
         ejecutivo:ejecutivo_id(id, nombre, apellido)
       `)
       .gte("fecha_cobro", primerDia)
-      .lt("fecha_cobro", primerDiaSiguiente)
+      .lt("fecha_cobro", ultimoDia)
       .order("fecha_cobro", { ascending: false });
 
-    // Ejecutivo solo ve los suyos
     if (!canManage) {
-      query = query.eq("ejecutivo_id", user!.id);
+      q = q.eq("ejecutivo_id", user!.id);
     } else if (ejFilter !== "todos") {
-      query = query.eq("ejecutivo_id", ejFilter);
+      q = q.eq("ejecutivo_id", ejFilter);
     }
 
-    const { data, error } = await query;
+    const { data, error } = await q;
     if (error) console.error("Error cargando cobros:", error);
-
-    const mapped = (data ?? []).map((c: any) => ({
-      id: c.id,
-      monto: c.monto,
-      metodo_pago: c.metodo_pago,
-      modalidad: c.modalidad,
-      fecha_cobro: c.fecha_cobro,
-      periodo_desde: c.periodo_desde,
-      periodo_hasta: c.periodo_hasta,
-      notas: c.notas,
-      cliente_nombre: c.cliente?.nombre_comercial ?? "—",
-      ejecutivo_id: c.ejecutivo?.id ?? "",
-      ejecutivo_nombre: c.ejecutivo
-        ? `${c.ejecutivo.nombre ?? ""} ${c.ejecutivo.apellido ?? ""}`.trim()
-        : "—",
-    }));
-
-    setCobros(mapped);
+    setCobros(mapCobros(data ?? []));
     setLoading(false);
   };
 
-  const totalCobrado = cobros.reduce((sum, c) => sum + (c.monto ?? 0), 0);
-  const ejNombre = ejFilter === "todos"
-    ? null
-    : ejecutivos.find((e) => e.id === ejFilter);
+  // Export con rango personalizado (consulta fresh)
+  const handleExport = async (rango: RangoFecha) => {
+    const { data } = await buildQuery(rango.desde, rango.hasta);
+    const rows = mapCobros(data ?? []);
 
-  const exportarExcel = () => {
-    const nombreMes = `${MESES[mes - 1]} ${anio}`;
     const filtroNombre = ejFilter === "todos"
       ? "Todo el equipo"
-      : (ejecutivos.find((e) => e.id === ejFilter)
-          ? `${ejecutivos.find((e) => e.id === ejFilter)!.nombre} ${ejecutivos.find((e) => e.id === ejFilter)!.apellido ?? ""}`.trim()
-          : "Filtrado");
+      : ejecutivos.find((e) => e.id === ejFilter)
+        ? `${ejecutivos.find((e) => e.id === ejFilter)!.nombre} ${ejecutivos.find((e) => e.id === ejFilter)!.apellido ?? ""}`.trim()
+        : "Filtrado";
 
+    const total = rows.reduce((s, c) => s + c.monto, 0);
     const wb = XLSX.utils.book_new();
 
-    const wsData = [
-      ["Cobros del mes — SGP"],
-      [`Período: ${nombreMes}`, canManage ? `Ejecutivo: ${filtroNombre}` : ""],
-      [`Total cobrado: ${formatPYG(totalCobrado)}`, `Cantidad: ${cobros.length} cobros`],
-      [],
+    const encabezado = canManage
+      ? ["Fecha", "Cliente", "Rubro", "Ejecutivo", "Monto (Gs.)", "Método de pago", "Modalidad", "Período desde", "Período hasta", "Notas"]
+      : ["Fecha", "Cliente", "Rubro", "Monto (Gs.)", "Método de pago", "Modalidad", "Período desde", "Período hasta", "Notas"];
+
+    const filas = rows.map((c) =>
       canManage
-        ? ["Fecha", "Cliente", "Ejecutivo", "Monto (Gs.)", "Método de pago", "Modalidad", "Período desde", "Período hasta", "Notas"]
-        : ["Fecha", "Cliente", "Monto (Gs.)", "Método de pago", "Modalidad", "Período desde", "Período hasta", "Notas"],
-      ...cobros.map((c) =>
-        canManage
-          ? [c.fecha_cobro, c.cliente_nombre, c.ejecutivo_nombre, c.monto, c.metodo_pago ?? "", c.modalidad ?? "", c.periodo_desde ?? "", c.periodo_hasta ?? "", c.notas ?? ""]
-          : [c.fecha_cobro, c.cliente_nombre, c.monto, c.metodo_pago ?? "", c.modalidad ?? "", c.periodo_desde ?? "", c.periodo_hasta ?? "", c.notas ?? ""]
-      ),
+        ? [c.fecha_cobro, c.cliente_nombre, c.cliente_rubro ?? "", c.ejecutivo_nombre, c.monto, c.metodo_pago ?? "", c.modalidad ?? "", c.periodo_desde ?? "", c.periodo_hasta ?? "", c.notas ?? ""]
+        : [c.fecha_cobro, c.cliente_nombre, c.cliente_rubro ?? "", c.monto, c.metodo_pago ?? "", c.modalidad ?? "", c.periodo_desde ?? "", c.periodo_hasta ?? "", c.notas ?? ""]
+    );
+
+    const wsData = [
+      ["Cobros — SGP"],
+      [`Período: ${rango.label}`, canManage ? `Ejecutivo: ${filtroNombre}` : ""],
+      [`Total cobrado: ${formatPYG(total)}`, `Cantidad: ${rows.length} cobros`],
+      [],
+      encabezado,
+      ...filas,
+      [],
+      ["TOTAL", "", canManage ? "" : "", total],
     ];
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     ws["!cols"] = canManage
-      ? [{ wch: 14 }, { wch: 28 }, { wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 }]
-      : [{ wch: 14 }, { wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 }];
+      ? [{ wch: 14 }, { wch: 26 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 }]
+      : [{ wch: 14 }, { wch: 26 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 }];
     XLSX.utils.book_append_sheet(wb, ws, "Cobros");
 
-    const nombreArchivo = `SGP_Cobros_${MESES[mes - 1]}_${anio}.xlsx`;
-    XLSX.writeFile(wb, nombreArchivo);
+    XLSX.writeFile(wb, `SGP_Cobros_${rango.label.replace(/\s/g, "_")}.xlsx`);
   };
+
+  const totalCobrado = cobros.reduce((sum, c) => sum + (c.monto ?? 0), 0);
+  const ejNombre = ejFilter === "todos" ? null : ejecutivos.find((e) => e.id === ejFilter);
 
   const formatFecha = (iso: string) => {
     const d = new Date(iso + "T12:00:00");
@@ -201,15 +237,13 @@ const Cobros = () => {
             {MESES[mes - 1]} {anio}
           </span>
           <div className="flex items-center gap-1">
-            {!loading && cobros.length > 0 && (
-              <button
-                onClick={exportarExcel}
-                title="Exportar Excel"
-                className="flex h-9 w-9 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 transition-colors"
-              >
-                <Download className="h-4 w-4" />
-              </button>
-            )}
+            <button
+              onClick={() => setShowExport(true)}
+              title="Exportar Excel"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-emerald-600 hover:bg-emerald-50 transition-colors"
+            >
+              <Download className="h-4 w-4" />
+            </button>
             <button
               onClick={irMesSiguiente}
               disabled={esMesActual}
@@ -240,7 +274,6 @@ const Cobros = () => {
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
                 <Receipt className="h-6 w-6" />
               </div>
-              {/* Filtro ejecutivo solo para canManage */}
               {canManage && (
                 <button
                   onClick={() => setShowFilter((v) => !v)}
@@ -306,6 +339,9 @@ const Cobros = () => {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold">{c.cliente_nombre}</p>
+                    {c.cliente_rubro && (
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">{c.cliente_rubro}</p>
+                    )}
                     {canManage && (
                       <p className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
                         <User className="h-3 w-3" />
@@ -354,6 +390,14 @@ const Cobros = () => {
           </div>
         )}
       </div>
+
+      {/* Modal de exportación */}
+      <ExportModal
+        open={showExport}
+        onClose={() => setShowExport(false)}
+        onExport={handleExport}
+        titulo="Exportar cobros"
+      />
     </>
   );
 };

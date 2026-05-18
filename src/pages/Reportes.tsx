@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useProfile } from "@/hooks/useProfile";
 import { useAuth } from "@/contexts/AuthContext";
 import * as XLSX from "xlsx";
+import { ExportModal, RangoFecha } from "@/components/ExportModal";
 
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
@@ -153,22 +154,88 @@ const Reportes = () => {
   const totalClientes = embudo.reduce((s, e) => s + e.count, 0);
 
   const sortedExec = [...ejecutivos].sort((a, b) => b.cobrado - a.cobrado);
+  const [showExport, setShowExport] = useState(false);
 
-  const exportarExcel = () => {
-    const nombreMes = `${MESES[mes - 1]} ${anio}`;
+  const handleExport = async (rango: RangoFecha) => {
+    // Re-consulta cobros para el rango seleccionado
+    const hastaDate = new Date(rango.hasta + "T23:59:59");
+    hastaDate.setDate(hastaDate.getDate() + 1);
+    const hastaExclusivo = hastaDate.toISOString().slice(0, 10);
+
+    const [{ data: cobrosRango }, { data: perfilesData }] = await Promise.all([
+      supabase
+        .from("cobros")
+        .select("ejecutivo_id, monto, cliente:cliente_id(nombre_comercial, rubro), ejecutivo:ejecutivo_id(nombre, apellido), fecha_cobro, metodo_pago, modalidad, periodo_desde, periodo_hasta, notas")
+        .gte("fecha_cobro", rango.desde)
+        .lt("fecha_cobro", hastaExclusivo),
+      canManage
+        ? supabase.from("profiles").select("id, nombre, apellido").in("rol", ["ejecutivo", "supervisor"]).eq("activo", true).order("nombre")
+        : Promise.resolve({ data: null }),
+    ]);
+
     const wb = XLSX.utils.book_new();
 
-    // ── Hoja 1: Resumen ──────────────────────────────────────────
-    const wsResumenData = [
-      ["Reporte de Gestión Comercial — SGP"],
-      [`Período: ${nombreMes}`],
+    // ── Hoja 1: Detalle de cobros ─────────────────────────────────
+    const filasDetalle = (cobrosRango ?? []).map((c: any) => [
+      c.fecha_cobro,
+      c.cliente?.nombre_comercial ?? "—",
+      c.cliente?.rubro ?? "—",
+      c.ejecutivo ? `${c.ejecutivo.nombre ?? ""} ${c.ejecutivo.apellido ?? ""}`.trim() : "—",
+      c.monto,
+      c.metodo_pago ?? "",
+      c.modalidad ?? "",
+      c.periodo_desde ?? "",
+      c.periodo_hasta ?? "",
+      c.notas ?? "",
+    ]);
+    const totalRango = (cobrosRango ?? []).reduce((s: number, c: any) => s + (c.monto ?? 0), 0);
+
+    const wsDetalle = XLSX.utils.aoa_to_sheet([
+      ["Detalle de cobros — SGP"],
+      [`Período: ${rango.label}`],
+      [`Total: ${formatPYG(totalRango)}`, `Cantidad: ${filasDetalle.length} cobros`],
       [],
-      ["RESUMEN GENERAL", ""],
-      ["Total cobrado", totalCobrado],
-      ["Meta total equipo", totalMeta],
-      ["Cumplimiento (%)", totalMeta > 0 ? Math.round((totalCobrado / totalMeta) * 100) : "Sin meta"],
+      ["Fecha", "Cliente", "Rubro", "Ejecutivo", "Monto (Gs.)", "Método de pago", "Modalidad", "Período desde", "Período hasta", "Notas"],
+      ...filasDetalle,
+    ]);
+    wsDetalle["!cols"] = [{ wch: 14 }, { wch: 26 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, wsDetalle, "Detalle cobros");
+
+    // ── Hoja 2: Performance por ejecutivo ────────────────────────
+    const cobradoMap: Record<string, number> = {};
+    (cobrosRango ?? []).forEach((c: any) => {
+      if (c.ejecutivo_id) cobradoMap[c.ejecutivo_id] = (cobradoMap[c.ejecutivo_id] ?? 0) + (c.monto ?? 0);
+    });
+
+    const execRows = canManage
+      ? (perfilesData ?? []).map((p: any) => {
+          const nombre = [p.nombre, p.apellido].filter(Boolean).join(" ");
+          const cobrado = cobradoMap[p.id] ?? 0;
+          const e = ejecutivos.find((ex) => ex.id === p.id);
+          const meta = e?.meta ?? 0;
+          return [nombre, meta, cobrado, meta > 0 ? `${Math.round((cobrado / meta) * 100)}%` : "Sin meta", e?.clientes ?? "—"];
+        }).sort((a: any[], b: any[]) => b[2] - a[2])
+      : [[
+          [ejecutivos[0]?.nombre, ejecutivos[0]?.apellido].filter(Boolean).join(" "),
+          ejecutivos[0]?.meta ?? 0,
+          ejecutivos[0]?.cobrado ?? 0,
+          ejecutivos[0]?.meta ? `${Math.round((ejecutivos[0].cobrado / ejecutivos[0].meta) * 100)}%` : "Sin meta",
+          ejecutivos[0]?.clientes ?? "—",
+        ]];
+
+    const wsExec = XLSX.utils.aoa_to_sheet([
+      [`Performance por ejecutivo — ${rango.label}`],
       [],
-      ["CARTERA ACTIVA POR INSTANCIA", ""],
+      ["Ejecutivo", "Meta (Gs.)", "Cobrado en período (Gs.)", "Cumplimiento (%)", "Clientes activos"],
+      ...execRows,
+    ]);
+    wsExec["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 22 }, { wch: 18 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, wsExec, "Performance");
+
+    // ── Hoja 3: Cartera activa ────────────────────────────────────
+    const wsCartera = XLSX.utils.aoa_to_sheet([
+      ["Cartera activa — estado actual"],
+      [],
       ["Instancia", "Cantidad", "% del total"],
       ...embudo.map(({ instancia, count }) => [
         INSTANCIA_CONFIG[instancia]?.label ?? instancia,
@@ -176,31 +243,11 @@ const Reportes = () => {
         totalClientes > 0 ? `${Math.round((count / totalClientes) * 100)}%` : "0%",
       ]),
       ["TOTAL", totalClientes, "100%"],
-    ];
-    const wsResumen = XLSX.utils.aoa_to_sheet(wsResumenData);
-    wsResumen["!cols"] = [{ wch: 30 }, { wch: 18 }, { wch: 12 }];
-    XLSX.utils.book_append_sheet(wb, wsResumen, "Resumen");
+    ]);
+    wsCartera["!cols"] = [{ wch: 20 }, { wch: 12 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, wsCartera, "Cartera activa");
 
-    // ── Hoja 2: Performance por ejecutivo ────────────────────────
-    const wsExecData = [
-      [`Performance por ejecutivo — ${nombreMes}`],
-      [],
-      ["Ejecutivo", "Meta (Gs.)", "Cobrado (Gs.)", "Cumplimiento (%)", "Clientes activos"],
-      ...sortedExec.map((e) => {
-        const nombreCompleto = [e.nombre, e.apellido].filter(Boolean).join(" ");
-        const pct = e.meta > 0 ? Math.round((e.cobrado / e.meta) * 100) : "Sin meta";
-        return [nombreCompleto, e.meta, e.cobrado, pct, e.clientes];
-      }),
-      [],
-      ["TOTAL EQUIPO", totalMeta, totalCobrado, totalMeta > 0 ? `${teamPct}%` : "—", ""],
-    ];
-    const wsExec = XLSX.utils.aoa_to_sheet(wsExecData);
-    wsExec["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 16 }];
-    XLSX.utils.book_append_sheet(wb, wsExec, "Performance");
-
-    // ── Guardar ──────────────────────────────────────────────────
-    const nombreArchivo = `SGP_Reporte_${MESES[mes - 1]}_${anio}.xlsx`;
-    XLSX.writeFile(wb, nombreArchivo);
+    XLSX.writeFile(wb, `SGP_Reporte_${rango.label.replace(/\s/g, "_")}.xlsx`);
   };
 
   return (
@@ -224,7 +271,7 @@ const Reportes = () => {
         <div className="flex items-center gap-1">
           {canManage && !loading && (
             <button
-              onClick={exportarExcel}
+              onClick={() => setShowExport(true)}
               title="Exportar Excel"
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-card text-emerald-600 active:scale-95 transition-transform hover:bg-emerald-50"
             >
@@ -406,6 +453,13 @@ const Reportes = () => {
           </section>
         </div>
       )}
+
+      <ExportModal
+        open={showExport}
+        onClose={() => setShowExport(false)}
+        onExport={handleExport}
+        titulo="Exportar reporte"
+      />
     </>
   );
 };
