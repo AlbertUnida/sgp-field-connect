@@ -21,7 +21,7 @@ interface Cobro {
   periodo_hasta: string | null;
   notas: string | null;
   cliente_nombre: string;
-  cliente_rubro: string | null;
+  cliente_rubro: string | null; // nombre del rubro (de rubro_rel o campo rubro)
   ejecutivo_nombre: string;
   ejecutivo_id: string;
 }
@@ -49,7 +49,7 @@ const mapCobros = (data: any[]): Cobro[] =>
     periodo_hasta: c.periodo_hasta,
     notas: c.notas,
     cliente_nombre: c.cliente?.nombre_comercial ?? "—",
-    cliente_rubro: c.cliente?.rubro ?? null,
+    cliente_rubro: c.cliente?.rubro_rel?.nombre ?? c.cliente?.rubro ?? null,
     ejecutivo_id: c.ejecutivo?.id ?? "",
     ejecutivo_nombre: c.ejecutivo
       ? `${c.ejecutivo.nombre ?? ""} ${c.ejecutivo.apellido ?? ""}`.trim()
@@ -110,7 +110,7 @@ const Cobros = () => {
       .select(`
         id, monto, metodo_pago, modalidad, fecha_cobro,
         periodo_desde, periodo_hasta, notas,
-        cliente:cliente_id(nombre_comercial, rubro),
+        cliente:cliente_id(nombre_comercial, rubro, rubro_rel:rubro_id(nombre)),
         ejecutivo:ejecutivo_id(id, nombre, apellido)
       `)
       .gte("fecha_cobro", desde)
@@ -138,7 +138,7 @@ const Cobros = () => {
       .select(`
         id, monto, metodo_pago, modalidad, fecha_cobro,
         periodo_desde, periodo_hasta, notas,
-        cliente:cliente_id(nombre_comercial, rubro),
+        cliente:cliente_id(nombre_comercial, rubro, rubro_rel:rubro_id(nombre)),
         ejecutivo:ejecutivo_id(id, nombre, apellido)
       `)
       .gte("fecha_cobro", primerDia)

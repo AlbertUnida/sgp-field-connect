@@ -157,97 +157,230 @@ const Reportes = () => {
   const [showExport, setShowExport] = useState(false);
 
   const handleExport = async (rango: RangoFecha) => {
-    // Re-consulta cobros para el rango seleccionado
+    // Rango: hasta es inclusivo, convertimos a exclusivo para el filtro lt
     const hastaDate = new Date(rango.hasta + "T23:59:59");
     hastaDate.setDate(hastaDate.getDate() + 1);
     const hastaExclusivo = hastaDate.toISOString().slice(0, 10);
 
-    const [{ data: cobrosRango }, { data: perfilesData }] = await Promise.all([
+    // ── Consultas paralelas ──────────────────────────────────────
+    const [
+      { data: gestionesData },
+      { data: cobrosData },
+      { data: perfilesData },
+      { data: carteraData },
+    ] = await Promise.all([
+      // Gestiones del período (visita, llamada, email, whatsapp)
+      supabase
+        .from("gestiones")
+        .select(`
+          fecha_inicio, tipo, resultado, nota, ejecutivo_id,
+          ejecutivo:ejecutivo_id(nombre, apellido),
+          cliente:cliente_id(nombre_comercial, rubro_id, rubro_rel:rubro_id(nombre))
+        `)
+        .gte("fecha_inicio", rango.desde)
+        .lt("fecha_inicio", hastaExclusivo)
+        .order("fecha_inicio", { ascending: false }),
+
+      // Cobros del período
       supabase
         .from("cobros")
-        .select("ejecutivo_id, monto, cliente:cliente_id(nombre_comercial, rubro), ejecutivo:ejecutivo_id(nombre, apellido), fecha_cobro, metodo_pago, modalidad, periodo_desde, periodo_hasta, notas")
+        .select("ejecutivo_id, cliente_id, monto, fecha_cobro, metodo_pago, modalidad, periodo_desde, periodo_hasta, notas, cliente:cliente_id(nombre_comercial, rubro_id, rubro_rel:rubro_id(nombre)), ejecutivo:ejecutivo_id(nombre, apellido)")
         .gte("fecha_cobro", rango.desde)
         .lt("fecha_cobro", hastaExclusivo),
-      canManage
-        ? supabase.from("profiles").select("id, nombre, apellido").in("rol", ["ejecutivo", "supervisor"]).eq("activo", true).order("nombre")
-        : Promise.resolve({ data: null }),
+
+      // Perfiles activos (ejecutivos/supervisores)
+      supabase
+        .from("profiles")
+        .select("id, nombre, apellido")
+        .in("rol", ["ejecutivo", "supervisor"])
+        .eq("activo", true)
+        .order("nombre"),
+
+      // Cartera asignada por ejecutivo (COMERCIAL + COBRANZAS + JURIDICO)
+      supabase
+        .from("clientes")
+        .select("ejecutivo_id")
+        .eq("activo", true)
+        .not("ejecutivo_id", "is", null),
     ]);
+
+    const getRubro = (c: any) =>
+      c?.rubro_rel?.nombre ?? c?.rubro ?? "Sin rubro";
+
+    const nombreEjec = (e: any) =>
+      e ? `${e.nombre ?? ""} ${e.apellido ?? ""}`.trim() : "—";
+
+    // ── Índices para cálculo por ejecutivo ───────────────────────
+    // Cartera total por ejecutivo
+    const carteraMap: Record<string, number> = {};
+    (carteraData ?? []).forEach((c: any) => {
+      if (c.ejecutivo_id) carteraMap[c.ejecutivo_id] = (carteraMap[c.ejecutivo_id] ?? 0) + 1;
+    });
+
+    // Clientes únicos visitados / contactados / gestionados por ejecutivo
+    const visitadosMap: Record<string, Set<string>> = {};
+    const contactadosMap: Record<string, Set<string>> = {};
+    const gestionadosMap: Record<string, Set<string>> = {};
+
+    (gestionesData ?? []).forEach((g: any) => {
+      const eid = g.ejecutivo_id;
+      const cid = g.cliente_id ?? g.cliente?.id;
+      if (!eid || !cid) return;
+      if (!gestionadosMap[eid]) gestionadosMap[eid] = new Set();
+      gestionadosMap[eid].add(cid);
+      if (g.tipo === "visita") {
+        if (!visitadosMap[eid]) visitadosMap[eid] = new Set();
+        visitadosMap[eid].add(cid);
+      } else {
+        if (!contactadosMap[eid]) contactadosMap[eid] = new Set();
+        contactadosMap[eid].add(cid);
+      }
+    });
+
+    // Clientes únicos cobrados por ejecutivo
+    const cobradosClientesMap: Record<string, Set<string>> = {};
+    const cobradoMontoMap: Record<string, number> = {};
+    (cobrosData ?? []).forEach((c: any) => {
+      const eid = c.ejecutivo_id;
+      if (!eid) return;
+      if (!cobradosClientesMap[eid]) cobradosClientesMap[eid] = new Set();
+      if (c.cliente_id) cobradosClientesMap[eid].add(c.cliente_id);
+      cobradoMontoMap[eid] = (cobradoMontoMap[eid] ?? 0) + (c.monto ?? 0);
+    });
+
+    const pct = (num: number, den: number) =>
+      den > 0 ? `${Math.round((num / den) * 100)}%` : "—";
 
     const wb = XLSX.utils.book_new();
 
-    // ── Hoja 1: Detalle de cobros ─────────────────────────────────
-    const filasDetalle = (cobrosRango ?? []).map((c: any) => [
-      c.fecha_cobro,
-      c.cliente?.nombre_comercial ?? "—",
-      c.cliente?.rubro ?? "—",
-      c.ejecutivo ? `${c.ejecutivo.nombre ?? ""} ${c.ejecutivo.apellido ?? ""}`.trim() : "—",
-      c.monto,
-      c.metodo_pago ?? "",
-      c.modalidad ?? "",
-      c.periodo_desde ?? "",
-      c.periodo_hasta ?? "",
-      c.notas ?? "",
-    ]);
-    const totalRango = (cobrosRango ?? []).reduce((s: number, c: any) => s + (c.monto ?? 0), 0);
+    // ── Hoja 1: Resumen de gestión por ejecutivo ──────────────────
+    const execRows = (perfilesData ?? []).map((p: any) => {
+      const nombre = [p.nombre, p.apellido].filter(Boolean).join(" ");
+      const cartera   = carteraMap[p.id] ?? 0;
+      const visitados = visitadosMap[p.id]?.size ?? 0;
+      const contactados = contactadosMap[p.id]?.size ?? 0;
+      const gestionados = gestionadosMap[p.id]?.size ?? 0;
+      const cobrados  = cobradosClientesMap[p.id]?.size ?? 0;
+      const cobradoGs = cobradoMontoMap[p.id] ?? 0;
+      const e = ejecutivos.find((ex) => ex.id === p.id);
+      return [
+        nombre,
+        cartera,
+        visitados,
+        contactados,
+        gestionados,
+        pct(gestionados, cartera),   // penetración
+        cobrados,
+        pct(cobrados, gestionados),  // conversión gestión → cobro
+        cobradoGs,
+        e?.meta ?? 0,
+        e?.meta ? pct(cobradoGs, e.meta) : "Sin meta",
+      ];
+    }).sort((a: any[], b: any[]) => b[4] - a[4]); // orden por gestionados desc
 
-    const wsDetalle = XLSX.utils.aoa_to_sheet([
-      ["Detalle de cobros — SGP"],
+    const totCartera    = execRows.reduce((s: number, r: any[]) => s + r[1], 0);
+    const totVisitados  = execRows.reduce((s: number, r: any[]) => s + r[2], 0);
+    const totContactados= execRows.reduce((s: number, r: any[]) => s + r[3], 0);
+    const totGestionados= execRows.reduce((s: number, r: any[]) => s + r[4], 0);
+    const totCobrados   = execRows.reduce((s: number, r: any[]) => s + r[6], 0);
+    const totCobradoGs  = execRows.reduce((s: number, r: any[]) => s + r[8], 0);
+    const totMeta       = ejecutivos.reduce((s, e) => s + e.meta, 0);
+
+    const wsResumen = XLSX.utils.aoa_to_sheet([
+      ["Reporte de Gestión Comercial — SGP"],
       [`Período: ${rango.label}`],
-      [`Total: ${formatPYG(totalRango)}`, `Cantidad: ${filasDetalle.length} cobros`],
+      [`Generado: ${new Date().toLocaleDateString("es-PY")}`],
+      [],
+      [
+        "Ejecutivo",
+        "Cartera asignada",
+        "Clientes visitados",
+        "Clientes contactados",
+        "Total gestionados",
+        "% Penetración cartera",
+        "Clientes cobrados",
+        "% Conversión gestión→cobro",
+        "Monto cobrado (Gs.)",
+        "Meta (Gs.)",
+        "% Cumpl. meta",
+      ],
+      ...execRows,
+      [],
+      [
+        "TOTAL EQUIPO",
+        totCartera,
+        totVisitados,
+        totContactados,
+        totGestionados,
+        pct(totGestionados, totCartera),
+        totCobrados,
+        pct(totCobrados, totGestionados),
+        totCobradoGs,
+        totMeta,
+        totMeta > 0 ? pct(totCobradoGs, totMeta) : "Sin meta",
+      ],
+    ]);
+    wsResumen["!cols"] = [
+      { wch: 24 }, { wch: 16 }, { wch: 18 }, { wch: 20 }, { wch: 18 },
+      { wch: 22 }, { wch: 18 }, { wch: 26 }, { wch: 20 }, { wch: 16 }, { wch: 16 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsResumen, "Resumen gestión");
+
+    // ── Hoja 2: Detalle de gestiones ─────────────────────────────
+    const TIPO_LABEL: Record<string, string> = {
+      visita: "Visita presencial",
+      llamada: "Llamada",
+      email: "Email",
+      whatsapp: "WhatsApp",
+    };
+
+    const wsGestiones = XLSX.utils.aoa_to_sheet([
+      ["Detalle de gestiones — " + rango.label],
+      [],
+      ["Fecha", "Ejecutivo", "Cliente", "Rubro", "Tipo de gestión", "Resultado", "Notas"],
+      ...(gestionesData ?? []).map((g: any) => [
+        g.fecha_inicio?.slice(0, 10) ?? "",
+        nombreEjec(g.ejecutivo),
+        g.cliente?.nombre_comercial ?? "—",
+        getRubro(g.cliente),
+        TIPO_LABEL[g.tipo] ?? g.tipo ?? "—",
+        g.resultado ?? "",
+        g.nota ?? "",
+      ]),
+    ]);
+    wsGestiones["!cols"] = [
+      { wch: 14 }, { wch: 22 }, { wch: 26 }, { wch: 20 },
+      { wch: 20 }, { wch: 20 }, { wch: 36 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsGestiones, "Detalle gestiones");
+
+    // ── Hoja 3: Cobros del período ────────────────────────────────
+    const totalCobradoRango = (cobrosData ?? []).reduce((s: number, c: any) => s + (c.monto ?? 0), 0);
+    const wsCobros = XLSX.utils.aoa_to_sheet([
+      ["Cobros del período — " + rango.label],
+      [`Total cobrado: ${formatPYG(totalCobradoRango)}`, `Cantidad: ${cobrosData?.length ?? 0} cobros`],
       [],
       ["Fecha", "Cliente", "Rubro", "Ejecutivo", "Monto (Gs.)", "Método de pago", "Modalidad", "Período desde", "Período hasta", "Notas"],
-      ...filasDetalle,
-    ]);
-    wsDetalle["!cols"] = [{ wch: 14 }, { wch: 26 }, { wch: 20 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 }];
-    XLSX.utils.book_append_sheet(wb, wsDetalle, "Detalle cobros");
-
-    // ── Hoja 2: Performance por ejecutivo ────────────────────────
-    const cobradoMap: Record<string, number> = {};
-    (cobrosRango ?? []).forEach((c: any) => {
-      if (c.ejecutivo_id) cobradoMap[c.ejecutivo_id] = (cobradoMap[c.ejecutivo_id] ?? 0) + (c.monto ?? 0);
-    });
-
-    const execRows = canManage
-      ? (perfilesData ?? []).map((p: any) => {
-          const nombre = [p.nombre, p.apellido].filter(Boolean).join(" ");
-          const cobrado = cobradoMap[p.id] ?? 0;
-          const e = ejecutivos.find((ex) => ex.id === p.id);
-          const meta = e?.meta ?? 0;
-          return [nombre, meta, cobrado, meta > 0 ? `${Math.round((cobrado / meta) * 100)}%` : "Sin meta", e?.clientes ?? "—"];
-        }).sort((a: any[], b: any[]) => b[2] - a[2])
-      : [[
-          [ejecutivos[0]?.nombre, ejecutivos[0]?.apellido].filter(Boolean).join(" "),
-          ejecutivos[0]?.meta ?? 0,
-          ejecutivos[0]?.cobrado ?? 0,
-          ejecutivos[0]?.meta ? `${Math.round((ejecutivos[0].cobrado / ejecutivos[0].meta) * 100)}%` : "Sin meta",
-          ejecutivos[0]?.clientes ?? "—",
-        ]];
-
-    const wsExec = XLSX.utils.aoa_to_sheet([
-      [`Performance por ejecutivo — ${rango.label}`],
-      [],
-      ["Ejecutivo", "Meta (Gs.)", "Cobrado en período (Gs.)", "Cumplimiento (%)", "Clientes activos"],
-      ...execRows,
-    ]);
-    wsExec["!cols"] = [{ wch: 28 }, { wch: 16 }, { wch: 22 }, { wch: 18 }, { wch: 16 }];
-    XLSX.utils.book_append_sheet(wb, wsExec, "Performance");
-
-    // ── Hoja 3: Cartera activa ────────────────────────────────────
-    const wsCartera = XLSX.utils.aoa_to_sheet([
-      ["Cartera activa — estado actual"],
-      [],
-      ["Instancia", "Cantidad", "% del total"],
-      ...embudo.map(({ instancia, count }) => [
-        INSTANCIA_CONFIG[instancia]?.label ?? instancia,
-        count,
-        totalClientes > 0 ? `${Math.round((count / totalClientes) * 100)}%` : "0%",
+      ...(cobrosData ?? []).map((c: any) => [
+        c.fecha_cobro,
+        c.cliente?.nombre_comercial ?? "—",
+        getRubro(c.cliente),
+        nombreEjec(c.ejecutivo),
+        c.monto,
+        c.metodo_pago ?? "",
+        c.modalidad ?? "",
+        c.periodo_desde ?? "",
+        c.periodo_hasta ?? "",
+        c.notas ?? "",
       ]),
-      ["TOTAL", totalClientes, "100%"],
     ]);
-    wsCartera["!cols"] = [{ wch: 20 }, { wch: 12 }, { wch: 14 }];
-    XLSX.utils.book_append_sheet(wb, wsCartera, "Cartera activa");
+    wsCobros["!cols"] = [
+      { wch: 14 }, { wch: 26 }, { wch: 20 }, { wch: 22 },
+      { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsCobros, "Cobros");
 
-    XLSX.writeFile(wb, `SGP_Reporte_${rango.label.replace(/\s/g, "_")}.xlsx`);
+    XLSX.writeFile(wb, `SGP_Gestion_${rango.label.replace(/\s/g, "_")}.xlsx`);
   };
 
   return (
