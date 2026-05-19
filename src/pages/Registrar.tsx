@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 
 interface ClienteOpcion {
   id: string;
+  numero_cliente: number | null;
   nombre_comercial: string;
   ciudad: string | null;
   instancia: string | null;
@@ -103,7 +104,7 @@ const Registrar = () => {
     setCargandoClientes(true);
     let query = supabase
       .from("clientes")
-      .select("id, nombre_comercial, ciudad, instancia")
+      .select("id, numero_cliente, nombre_comercial, ciudad, instancia")
       .eq("activo", true)
       .order("nombre_comercial");
 
@@ -116,13 +117,16 @@ const Registrar = () => {
     setCargandoClientes(false);
   };
 
-  // Filtrar por texto escrito
+  // Filtrar por texto escrito o por ID numérico
   const clientesFiltrados = clientes.filter((c) => {
     if (!busqueda) return false;
     const q = busqueda.toLowerCase();
+    const idStr = c.numero_cliente ? String(c.numero_cliente).padStart(4, "0") : "";
+    const soloNumeros = busqueda.replace(/\D/g, "");
     return (
       c.nombre_comercial.toLowerCase().includes(q) ||
-      (c.ciudad ?? "").toLowerCase().includes(q)
+      (c.ciudad ?? "").toLowerCase().includes(q) ||
+      (soloNumeros && idStr.includes(soloNumeros))
     );
   });
 
@@ -395,6 +399,11 @@ const Registrar = () => {
                       className="flex w-full items-center gap-3 px-4 py-3 text-left transition-smooth hover:bg-secondary"
                     >
                       <div className="min-w-0 flex-1">
+                        {c.numero_cliente && (
+                          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase">
+                            ID {String(c.numero_cliente).padStart(4, "0")}
+                          </p>
+                        )}
                         <p className="truncate text-sm font-semibold">{c.nombre_comercial}</p>
                         {c.ciudad && <p className="truncate text-[11px] text-muted-foreground">{c.ciudad}</p>}
                       </div>
