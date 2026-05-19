@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import {
   Users, Target, ChevronDown, ChevronUp, Save, Shield, UserCheck,
   Eye, Loader2, Plus, Building2, Trash2, Tag, MapPin, ChevronRight,
-  Clock, Calendar, BarChart2, AlertTriangle, CalendarClock
+  Clock, Calendar, BarChart2, AlertTriangle, CalendarClock, ClipboardList, GripVertical, Pencil, Check, X
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
@@ -56,7 +56,15 @@ const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto"
 const formatPYGLocal = (n: number) =>
   new Intl.NumberFormat("es-PY", { style: "currency", currency: "PYG", maximumFractionDigits: 0 }).format(n);
 
-type Seccion = "ejecutivos" | "censo" | "catalogo" | "seguimiento";
+type Seccion = "ejecutivos" | "censo" | "catalogo" | "seguimiento" | "resultados";
+
+interface TipoResultado {
+  id: string;
+  nombre: string;
+  tipo_formulario: string | null;
+  activo: boolean;
+  orden: number;
+}
 
 interface SeguimientoEj {
   id: string;
@@ -127,6 +135,14 @@ const Admin = () => {
   const [seguimientoData, setSeguimientoData] = useState<SeguimientoEj[]>([]);
   const [loadingSeguimiento, setLoadingSeguimiento] = useState(false);
 
+  // ── RESULTADOS ──
+  const [tiposResultado, setTiposResultado] = useState<TipoResultado[]>([]);
+  const [loadingResultados, setLoadingResultados] = useState(false);
+  const [nuevoResultadoNombre, setNuevoResultadoNombre] = useState("");
+  const [guardandoResultado, setGuardandoResultado] = useState(false);
+  const [editandoResultado, setEditandoResultado] = useState<string | null>(null);
+  const [editNombre, setEditNombre] = useState("");
+
   useEffect(() => {
     if (!profileLoading && !canManage) navigate("/app");
   }, [canManage, profileLoading, navigate]);
@@ -143,6 +159,7 @@ const Admin = () => {
     if (seccion === "censo") cargarCenso();
     if (seccion === "catalogo") cargarCatalogo();
     if (seccion === "seguimiento") cargarSeguimiento();
+    if (seccion === "resultados") cargarResultados();
   }, [seccion]);
 
   // ─── EJECUTIVOS ───────────────────────────────────────
@@ -478,22 +495,62 @@ const Admin = () => {
 
   const ejecutivosSolo = ejecutivos.filter((e) => e.rol === "ejecutivo" || e.rol === "supervisor");
 
+  // ─── RESULTADOS ────────────────────────────────────────
+  const cargarResultados = async () => {
+    setLoadingResultados(true);
+    const { data } = await supabase.from("tipos_resultado").select("*").order("orden").order("nombre");
+    setTiposResultado(data ?? []);
+    setLoadingResultados(false);
+  };
+
+  const agregarResultado = async () => {
+    if (!nuevoResultadoNombre.trim()) return;
+    setGuardandoResultado(true);
+    const maxOrden = tiposResultado.reduce((m, t) => Math.max(m, t.orden), 0);
+    const { error } = await supabase.from("tipos_resultado")
+      .insert({ nombre: nuevoResultadoNombre.trim(), orden: maxOrden + 1 });
+    if (error) { toast.error("Error: " + error.message); }
+    else { toast.success("Resultado agregado ✅"); setNuevoResultadoNombre(""); cargarResultados(); }
+    setGuardandoResultado(false);
+  };
+
+  const guardarEdicion = async (id: string) => {
+    if (!editNombre.trim()) return;
+    const { error } = await supabase.from("tipos_resultado")
+      .update({ nombre: editNombre.trim() }).eq("id", id);
+    if (error) { toast.error("Error: " + error.message); }
+    else { toast.success("Actualizado ✅"); setEditandoResultado(null); cargarResultados(); }
+  };
+
+  const toggleActivo = async (t: TipoResultado) => {
+    const { error } = await supabase.from("tipos_resultado")
+      .update({ activo: !t.activo }).eq("id", t.id);
+    if (!error) cargarResultados();
+  };
+
+  const FORMULARIO_LABEL: Record<string, string> = {
+    medicion_incognito: "📐 Medición de Incógnito",
+    sin_medios:         "🔇 Sin Medios",
+    nota_comercial:     "📄 Nota Info & Prop. Com.",
+  };
+
   return (
     <>
       <AppHeader title="Administración" subtitle={`${MESES[MES_ACTUAL - 1]} ${ANIO_ACTUAL}`} />
 
       <div className="px-4 pt-5 pb-8 space-y-5">
 
-        {/* Tabs — admins ven los 4; supervisores solo CENSO, Catálogo, Seguimiento */}
+        {/* Tabs — admins ven los 5; supervisores solo CENSO, Catálogo, Seguimiento, Resultados */}
         <div className={cn(
           "gap-1 rounded-2xl border border-border bg-card p-1.5",
-          isAdmin ? "grid grid-cols-4" : "grid grid-cols-3"
+          isAdmin ? "grid grid-cols-5" : "grid grid-cols-4"
         )}>
           {([
-            { key: "ejecutivos",  label: "Equipo",    icon: Users,      adminOnly: true },
-            { key: "censo",       label: "CENSO",     icon: Building2,  adminOnly: false },
-            { key: "catalogo",    label: "Categoría", icon: Tag,        adminOnly: false },
-            { key: "seguimiento", label: "Seguim.",   icon: BarChart2,  adminOnly: false },
+            { key: "ejecutivos",  label: "Equipo",    icon: Users,          adminOnly: true },
+            { key: "censo",       label: "CENSO",     icon: Building2,      adminOnly: false },
+            { key: "catalogo",    label: "Categ.",    icon: Tag,            adminOnly: false },
+            { key: "seguimiento", label: "Seguim.",   icon: BarChart2,      adminOnly: false },
+            { key: "resultados",  label: "Result.",   icon: ClipboardList,  adminOnly: false },
           ] as const).filter((t) => !t.adminOnly || isAdmin).map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -1059,6 +1116,149 @@ const Admin = () => {
                     </div>
                   );
                 })}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* ══ RESULTADOS ══ */}
+        {seccion === "resultados" && (
+          <>
+            <div className="rounded-2xl border border-border bg-primary/5 p-4 space-y-1">
+              <p className="text-sm font-bold">Tipos de Resultado de Gestión</p>
+              <p className="text-xs text-muted-foreground">
+                Configurá los resultados disponibles al registrar una gestión. Los que tienen formulario especial (📐 📄 🔇) activan campos adicionales en el formulario de registro.
+              </p>
+            </div>
+
+            {/* Agregar nuevo */}
+            <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Nuevo tipo de resultado</p>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Ej: Interesado, Sin respuesta, Pagó..."
+                  value={nuevoResultadoNombre}
+                  onChange={(e) => setNuevoResultadoNombre(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && agregarResultado()}
+                  className="h-11 flex-1"
+                />
+                <Button
+                  onClick={agregarResultado}
+                  disabled={guardandoResultado || !nuevoResultadoNombre.trim()}
+                  className="h-11 px-4"
+                >
+                  {guardandoResultado ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                </Button>
+              </div>
+            </div>
+
+            {/* Lista */}
+            {loadingResultados ? (
+              <div className="flex justify-center pt-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : tiposResultado.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center">
+                <p className="text-sm font-semibold text-muted-foreground">Sin tipos de resultado</p>
+                <p className="mt-1 text-xs text-muted-foreground">Agregá uno arriba para que aparezca en el registro de gestiones</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-bold">Resultados ({tiposResultado.length})</h2>
+                  <p className="text-[11px] text-muted-foreground">
+                    {tiposResultado.filter((t) => t.activo).length} activos
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  {tiposResultado.map((t) => (
+                    <div
+                      key={t.id}
+                      className={cn(
+                        "rounded-2xl border bg-card p-3.5 shadow-card transition-smooth",
+                        t.activo ? "border-border" : "border-dashed border-border opacity-55"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <GripVertical className="h-4 w-4 text-muted-foreground shrink-0" />
+
+                        <div className="flex-1 min-w-0">
+                          {editandoResultado === t.id ? (
+                            <Input
+                              value={editNombre}
+                              onChange={(e) => setEditNombre(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") guardarEdicion(t.id);
+                                if (e.key === "Escape") setEditandoResultado(null);
+                              }}
+                              autoFocus
+                              className="h-9 text-sm"
+                            />
+                          ) : (
+                            <div>
+                              <p className="font-semibold text-sm leading-tight">{t.nombre}</p>
+                              {t.tipo_formulario && (
+                                <p className="text-[11px] text-primary font-semibold mt-0.5">
+                                  {FORMULARIO_LABEL[t.tipo_formulario] ?? t.tipo_formulario}
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Acciones */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {editandoResultado === t.id ? (
+                            <>
+                              <button
+                                onClick={() => guardarEdicion(t.id)}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-success hover:bg-success/10 transition-smooth"
+                                title="Guardar"
+                              >
+                                <Check className="h-4 w-4" />
+                              </button>
+                              <button
+                                onClick={() => setEditandoResultado(null)}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary transition-smooth"
+                                title="Cancelar"
+                              >
+                                <X className="h-4 w-4" />
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => { setEditandoResultado(t.id); setEditNombre(t.nombre); }}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground hover:bg-secondary transition-smooth"
+                              title="Editar nombre"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+
+                          {/* Toggle activo/inactivo */}
+                          <button
+                            onClick={() => toggleActivo(t)}
+                            className={cn(
+                              "relative inline-flex h-6 w-10 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200",
+                              t.activo ? "bg-primary" : "bg-muted"
+                            )}
+                            title={t.activo ? "Desactivar" : "Activar"}
+                          >
+                            <span
+                              className={cn(
+                                "pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md transition-transform duration-200",
+                                t.activo ? "translate-x-4" : "translate-x-0"
+                              )}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground px-1 pt-1">
+                  Desactivá resultados que ya no uses — no se elimina el historial. Los íconos 📐 📄 🔇 indican formularios especiales.
+                </p>
               </div>
             )}
           </>

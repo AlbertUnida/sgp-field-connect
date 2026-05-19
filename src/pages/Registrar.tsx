@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, MapPin, Phone, Car, Save, Calendar, Mail, Search, X, Loader2, MessageCircle, FileText, ImagePlus, Trash2 } from "lucide-react";
+import { Camera, MapPin, Phone, Car, Save, Calendar, Mail, Search, X, Loader2, MessageCircle, FileText, ImagePlus, Trash2, AlertCircle } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,22 +19,20 @@ interface ClienteOpcion {
   instancia: string | null;
 }
 
+interface TipoResultado {
+  id: string;
+  nombre: string;
+  tipo_formulario: string | null;
+  activo: boolean;
+  orden: number;
+}
+
 const TIPOS = [
   { key: "visita",   label: "Visita",    icon: Car },
   { key: "llamada",  label: "Llamada",   icon: Phone },
   { key: "email",    label: "Email",     icon: Mail },
   { key: "whatsapp", label: "WhatsApp",  icon: MessageCircle },
   { key: "otro",     label: "Otro",      icon: FileText },
-];
-
-const RESULTADOS = [
-  { key: "atendido",     label: "✅ Atendido" },
-  { key: "comprometido", label: "🤝 Comprometido" },
-  { key: "proxima_cita", label: "📅 Próxima cita" },
-  { key: "no_atendido",  label: "📵 No atendido" },
-  { key: "rechazo",      label: "❌ Rechazo" },
-  { key: "pago",         label: "💰 Pagó" },
-  { key: "sin_resultado",label: "➖ Sin resultado" },
 ];
 
 const Registrar = () => {
@@ -45,6 +43,10 @@ const Registrar = () => {
   const [clientes, setClientes] = useState<ClienteOpcion[]>([]);
   const [cargandoClientes, setCargandoClientes] = useState(true);
 
+  // Tipos de resultado dinámicos desde DB
+  const [tiposResultado, setTiposResultado] = useState<TipoResultado[]>([]);
+  const [cargandoResultados, setCargandoResultados] = useState(true);
+
   // Buscador
   const [busqueda, setBusqueda] = useState("");
   const [clienteSeleccionado, setClienteSeleccionado] = useState<ClienteOpcion | null>(null);
@@ -52,12 +54,24 @@ const Registrar = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Formulario
+  // Formulario base
   const [tipo, setTipo] = useState("visita");
-  const [resultado, setResultado] = useState("");
+  const [resultadoId, setResultadoId] = useState("");
   const [notas, setNotas] = useState("");
   const [proxima, setProxima] = useState("");
   const [guardando, setGuardando] = useState(false);
+
+  // Campos especiales — Medición de Incógnito
+  const [medAncho, setMedAncho] = useState("");
+  const [medAlto, setMedAlto] = useState("");
+  const [medFondo, setMedFondo] = useState("");
+  const [medMaterial, setMedMaterial] = useState("");
+  const [medObservaciones, setMedObservaciones] = useState("");
+
+  // Campos especiales — Nota Info & Prop. Com.
+  const [receptorNombre, setReceptorNombre] = useState("");
+  const [receptorApellido, setReceptorApellido] = useState("");
+  const [fechaEntrega, setFechaEntrega] = useState("");
 
   // GPS — captura automática, sin acción manual del ejecutivo
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
@@ -69,7 +83,11 @@ const Registrar = () => {
   const [fotoPreview, setFotoPreview] = useState<string | null>(null);
   const [subiendoFoto, setSubiendoFoto] = useState(false);
 
-  // Promesa de GPS reutilizable (usada al cambiar tipo y al guardar)
+  // Resultado seleccionado (objeto completo para saber tipo_formulario)
+  const resultadoSeleccionado = tiposResultado.find((t) => t.id === resultadoId) ?? null;
+  const tipoFormulario = resultadoSeleccionado?.tipo_formulario ?? null;
+
+  // Promesa de GPS reutilizable
   const capturarGPSPromise = (): Promise<{ lat: number; lng: number } | null> => {
     return new Promise((resolve) => {
       if (!navigator.geolocation) { resolve(null); return; }
@@ -98,6 +116,7 @@ const Registrar = () => {
   useEffect(() => {
     if (!user) return;
     cargarClientes();
+    cargarResultados();
   }, [user, canManage]);
 
   const cargarClientes = async () => {
@@ -117,7 +136,19 @@ const Registrar = () => {
     setCargandoClientes(false);
   };
 
-  // Filtrar por texto escrito o por ID numérico
+  const cargarResultados = async () => {
+    setCargandoResultados(true);
+    const { data } = await supabase
+      .from("tipos_resultado")
+      .select("id, nombre, tipo_formulario, activo, orden")
+      .eq("activo", true)
+      .order("orden")
+      .order("nombre");
+    setTiposResultado(data ?? []);
+    setCargandoResultados(false);
+  };
+
+  // Filtrar por texto o por ID numérico
   const clientesFiltrados = clientes.filter((c) => {
     if (!busqueda) return false;
     const q = busqueda.toLowerCase();
@@ -144,7 +175,15 @@ const Registrar = () => {
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
-  // Cerrar dropdown al hacer clic afuera
+  // Limpiar campos especiales al cambiar resultado
+  const handleResultadoChange = (id: string) => {
+    setResultadoId(id);
+    setMedAncho(""); setMedAlto(""); setMedFondo("");
+    setMedMaterial(""); setMedObservaciones("");
+    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
+  };
+
+  // Cerrar dropdown al clic afuera
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (
@@ -158,7 +197,7 @@ const Registrar = () => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Aplica una barra con nombre, fecha y hora en la parte inferior de la foto
+  // Marca de agua en foto
   const aplicarMarcaDeAgua = (file: File, nombre: string): Promise<File> => {
     return new Promise((resolve) => {
       const img = new Image();
@@ -169,11 +208,8 @@ const Registrar = () => {
         canvas.width = img.width;
         canvas.height = img.height;
         const ctx = canvas.getContext("2d")!;
-
-        // Dibujar la imagen original
         ctx.drawImage(img, 0, 0);
 
-        // Texto de la marca
         const ahora = new Date();
         const fecha = ahora.toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit", year: "numeric" });
         const hora = ahora.toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -185,22 +221,18 @@ const Registrar = () => {
         const padding = Math.round(fontSize * 0.7);
         const barHeight = fontSize + smallSize + padding * 2.5;
 
-        // Barra oscura translúcida
         ctx.fillStyle = "rgba(0, 0, 0, 0.70)";
         ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
 
-        // Línea de color SGP arriba de la barra
-        ctx.fillStyle = "#3b82f6"; // azul primario
+        ctx.fillStyle = "#3b82f6";
         ctx.fillRect(0, img.height - barHeight, img.width, Math.round(fontSize * 0.18));
 
-        // Nombre del ejecutivo (grande)
         ctx.font = `bold ${fontSize}px Arial, sans-serif`;
         ctx.fillStyle = "#ffffff";
         ctx.textBaseline = "top";
         ctx.textAlign = "left";
         ctx.fillText(linea1, padding, img.height - barHeight + padding);
 
-        // Fecha, hora y marca SGP (pequeño)
         ctx.font = `${smallSize}px Arial, sans-serif`;
         ctx.fillStyle = "rgba(255,255,255,0.75)";
         ctx.fillText(linea2, padding, img.height - barHeight + padding + fontSize + Math.round(smallSize * 0.3));
@@ -210,12 +242,7 @@ const Registrar = () => {
         canvas.toBlob(
           (blob) => {
             if (!blob) { resolve(file); return; }
-            const nuevoArchivo = new File(
-              [blob],
-              file.name.replace(/\.[^.]+$/, ".jpg"),
-              { type: "image/jpeg" }
-            );
-            resolve(nuevoArchivo);
+            resolve(new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" }));
           },
           "image/jpeg",
           0.92
@@ -230,8 +257,6 @@ const Registrar = () => {
   const seleccionarFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // Aplicar marca de agua inmediatamente — lo que se ve en preview es lo que se sube
     const nombre = nombreCompleto || "Ejecutivo SGP";
     const fotoConMarca = await aplicarMarcaDeAgua(file, nombre);
     setFotoFile(fotoConMarca);
@@ -246,11 +271,17 @@ const Registrar = () => {
 
   const guardar = async () => {
     if (!clienteSeleccionado) { toast.error("Seleccioná un cliente"); return; }
-    if (!resultado) { toast.error("Seleccioná el resultado de la gestión"); return; }
+    if (!resultadoId) { toast.error("Seleccioná el resultado de la gestión"); return; }
+
+    // Validaciones de formularios especiales
+    if (tipoFormulario === "nota_comercial" && !receptorNombre.trim()) {
+      toast.error("Ingresá el nombre de quien recibió la nota");
+      return;
+    }
 
     setGuardando(true);
 
-    // Para visitas: recapturar GPS fresco en el momento exacto del guardado
+    // GPS fresco al guardar visita
     let coordenadas = gps;
     if (tipo === "visita") {
       setGpsEstado("buscando");
@@ -261,12 +292,11 @@ const Registrar = () => {
         setGpsEstado("ok");
       } else {
         setGpsEstado("error");
-        // Guardamos igual pero sin coordenadas — se registra el intento fallido
         coordenadas = null;
       }
     }
 
-    // Subir foto si hay una seleccionada
+    // Subir foto si hay una
     let fotoUrl: string | null = null;
     if (fotoFile) {
       setSubiendoFoto(true);
@@ -284,11 +314,32 @@ const Registrar = () => {
       setSubiendoFoto(false);
     }
 
+    // Construir datos_extra según tipo_formulario
+    let datosExtra: Record<string, string> | null = null;
+    if (tipoFormulario === "medicion_incognito") {
+      datosExtra = {
+        ancho: medAncho,
+        alto: medAlto,
+        fondo: medFondo,
+        material: medMaterial,
+        observaciones: medObservaciones,
+      };
+    } else if (tipoFormulario === "nota_comercial") {
+      datosExtra = {
+        receptor_nombre: receptorNombre.trim(),
+        receptor_apellido: receptorApellido.trim(),
+        fecha_entrega: fechaEntrega,
+      };
+    }
+    // sin_medios no tiene datos extra (solo la alerta de 30 días)
+
     const { error } = await supabase.from("gestiones").insert({
       cliente_id: parseInt(clienteSeleccionado.id),
       ejecutivo_id: user!.id,
       tipo,
-      resultado,
+      resultado: resultadoSeleccionado?.nombre ?? "",
+      resultado_id: resultadoId,
+      datos_extra: datosExtra,
       nota: notas || null,
       fecha_inicio: new Date().toISOString(),
       lat_inicio: coordenadas?.lat ?? null,
@@ -302,18 +353,35 @@ const Registrar = () => {
       return;
     }
 
-    // Actualizar ultima_gestion y proxima_accion en el cliente
+    // Actualizar ultima_gestion en el cliente
+    const proximaFinal = tipoFormulario === "sin_medios"
+      ? (() => {
+          const d = new Date();
+          d.setDate(d.getDate() + 30);
+          return d.toISOString().split("T")[0];
+        })()
+      : proxima || null;
+
     await supabase.from("clientes").update({
       ultima_gestion: new Date().toISOString(),
-      proxima_accion: proxima || null,
+      proxima_accion: proximaFinal,
     }).eq("id", clienteSeleccionado.id);
 
-    toast.success("Gestión registrada en la bitácora ✅");
+    if (tipoFormulario === "sin_medios") {
+      toast.success("Gestión guardada. Próxima visita programada en 30 días ✅");
+    } else {
+      toast.success("Gestión registrada en la bitácora ✅");
+    }
+
+    // Limpiar formulario
     setClienteSeleccionado(null);
     setBusqueda("");
-    setResultado("");
+    setResultadoId("");
     setNotas("");
     setProxima("");
+    setMedAncho(""); setMedAlto(""); setMedFondo("");
+    setMedMaterial(""); setMedObservaciones("");
+    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
     quitarFoto();
     setGuardando(false);
   };
@@ -351,13 +419,12 @@ const Registrar = () => {
             </Label>
 
             <div className="relative">
-              {/* Input de búsqueda */}
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <input
                   ref={inputRef}
                   type="text"
-                  placeholder={cargandoClientes ? "Cargando clientes..." : "Escribí el nombre del cliente..."}
+                  placeholder={cargandoClientes ? "Cargando clientes..." : "Nombre o ID del cliente..."}
                   value={busqueda}
                   disabled={cargandoClientes}
                   onChange={(e) => {
@@ -385,7 +452,7 @@ const Registrar = () => {
                 )}
               </div>
 
-              {/* Dropdown de resultados */}
+              {/* Dropdown */}
               {mostrarDropdown && clientesFiltrados.length > 0 && (
                 <div
                   ref={dropdownRef}
@@ -422,7 +489,6 @@ const Registrar = () => {
                 </div>
               )}
 
-              {/* Sin resultados */}
               {mostrarDropdown && busqueda.length >= 2 && clientesFiltrados.length === 0 && !clienteSeleccionado && (
                 <div className="absolute z-50 mt-1 w-full rounded-xl border border-border bg-card p-4 text-center shadow-elevated">
                   <p className="text-sm text-muted-foreground">Sin coincidencias para "{busqueda}"</p>
@@ -430,7 +496,6 @@ const Registrar = () => {
               )}
             </div>
 
-            {/* Cliente seleccionado — confirmación o advertencia CENSO */}
             {clienteSeleccionado && clienteSeleccionado.instancia !== "CENSO" && (
               <p className="text-[11px] text-success font-semibold flex items-center gap-1">
                 ✓ {clienteSeleccionado.nombre_comercial}
@@ -449,17 +514,137 @@ const Registrar = () => {
             <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Resultado <span className="text-destructive">*</span>
             </Label>
-            <select
-              value={resultado}
-              onChange={(e) => setResultado(e.target.value)}
-              className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="">¿Cómo fue la gestión?</option>
-              {RESULTADOS.map((r) => (
-                <option key={r.key} value={r.key}>{r.label}</option>
-              ))}
-            </select>
+            {cargandoResultados ? (
+              <div className="flex items-center gap-2 h-12 px-3 rounded-xl border border-input bg-background text-muted-foreground text-sm">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                <span>Cargando resultados...</span>
+              </div>
+            ) : (
+              <select
+                value={resultadoId}
+                onChange={(e) => handleResultadoChange(e.target.value)}
+                className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="">¿Cómo fue la gestión?</option>
+                {tiposResultado.map((r) => (
+                  <option key={r.id} value={r.id}>{r.nombre}</option>
+                ))}
+              </select>
+            )}
           </div>
+
+          {/* ── Formulario especial: Medición de Incógnito ── */}
+          {tipoFormulario === "medicion_incognito" && (
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-primary">📐 Medición de Incógnito</p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Ancho</Label>
+                  <Input
+                    placeholder="cm"
+                    value={medAncho}
+                    onChange={(e) => setMedAncho(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Alto</Label>
+                  <Input
+                    placeholder="cm"
+                    value={medAlto}
+                    onChange={(e) => setMedAlto(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Fondo</Label>
+                  <Input
+                    placeholder="cm"
+                    value={medFondo}
+                    onChange={(e) => setMedFondo(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold uppercase text-muted-foreground">Material / Tipo de soporte</Label>
+                <Input
+                  placeholder="Ej: cartel luminoso, banner, pantalla LED..."
+                  value={medMaterial}
+                  onChange={(e) => setMedMaterial(e.target.value)}
+                  className="h-10 text-sm"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold uppercase text-muted-foreground">Observaciones</Label>
+                <Textarea
+                  placeholder="Cantidad de medios, ubicación, observaciones adicionales..."
+                  value={medObservaciones}
+                  onChange={(e) => setMedObservaciones(e.target.value)}
+                  rows={2}
+                  className="resize-none text-sm"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* ── Formulario especial: Sin Medios ── */}
+          {tipoFormulario === "sin_medios" && (
+            <div className="rounded-xl border border-warning/40 bg-warning/5 p-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-bold text-warning">🔇 Sin Medios — revisita en 30 días</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Se programará automáticamente una próxima acción en 30 días para este cliente.
+                    El campo "Próxima acción" será ignorado en este caso.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Formulario especial: Nota Info & Prop. Com. ── */}
+          {tipoFormulario === "nota_comercial" && (
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-primary">📄 Nota Info & Prop. Com.</p>
+              <p className="text-[11px] text-muted-foreground">Datos de quien recibió la nota o propuesta comercial.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">
+                    Nombre <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    placeholder="Nombre"
+                    value={receptorNombre}
+                    onChange={(e) => setReceptorNombre(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Apellido</Label>
+                  <Input
+                    placeholder="Apellido"
+                    value={receptorApellido}
+                    onChange={(e) => setReceptorApellido(e.target.value)}
+                    className="h-10 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-[10px] font-bold uppercase text-muted-foreground">Fecha de entrega</Label>
+                <div className="relative">
+                  <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="date"
+                    value={fechaEntrega}
+                    onChange={(e) => setFechaEntrega(e.target.value)}
+                    className="h-10 pl-10 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Notas */}
           <div className="space-y-1.5">
@@ -473,28 +658,30 @@ const Registrar = () => {
             />
           </div>
 
-          {/* Próxima acción */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Próxima acción</Label>
-            <div className="relative">
-              <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                type="date"
-                value={proxima}
-                onChange={(e) => setProxima(e.target.value)}
-                className="h-12 pl-10"
-              />
+          {/* Próxima acción — oculta para sin_medios (se auto-asigna) */}
+          {tipoFormulario !== "sin_medios" && (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Próxima acción</Label>
+              <div className="relative">
+                <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="date"
+                  value={proxima}
+                  onChange={(e) => setProxima(e.target.value)}
+                  className="h-12 pl-10"
+                />
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Evidencia de visita — solo lectura, GPS automático */}
+        {/* Evidencia de visita */}
         {tipo === "visita" && (
           <div className="rounded-2xl border border-border bg-card p-4 shadow-card">
             <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Evidencia de visita</p>
             <div className="mt-3 grid grid-cols-2 gap-2">
 
-              {/* GPS — indicador automático, sin acción manual */}
+              {/* GPS automático */}
               <div
                 className={cn(
                   "flex flex-col items-center justify-center gap-1.5 rounded-xl border p-3",
@@ -522,7 +709,7 @@ const Registrar = () => {
                   <>
                     <MapPin className="h-5 w-5 text-destructive" />
                     <span className="text-[11px] font-semibold text-destructive">Sin acceso GPS</span>
-                    <span className="text-[10px] text-muted-foreground text-center">Habilitá la ubicación en tu dispositivo</span>
+                    <span className="text-[10px] text-muted-foreground text-center">Habilitá la ubicación</span>
                   </>
                 ) : (
                   <>
@@ -577,7 +764,7 @@ const Registrar = () => {
 
             {gpsEstado === "error" && (
               <p className="mt-2.5 text-[11px] text-destructive font-semibold">
-                ⚠️ La visita se guardará sin coordenadas. El sistema registrará el intento de geolocalización fallido.
+                ⚠️ La visita se guardará sin coordenadas. El sistema registrará el intento fallido.
               </p>
             )}
           </div>
@@ -585,7 +772,7 @@ const Registrar = () => {
 
         <Button
           onClick={guardar}
-          disabled={guardando || subiendoFoto || !clienteSeleccionado || !resultado || clienteSeleccionado?.instancia === "CENSO"}
+          disabled={guardando || subiendoFoto || !clienteSeleccionado || !resultadoId || clienteSeleccionado?.instancia === "CENSO"}
           className="h-13 w-full gap-2 text-base font-semibold"
         >
           <Loader2 className={cn("h-5 w-5 animate-spin", !guardando && !subiendoFoto && "hidden")} />
