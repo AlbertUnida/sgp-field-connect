@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 
 interface Cliente {
   id: number;
+  numero_cliente: number | null;
   nombre_comercial: string;
   razon_social: string | null;
   ruc: string | null;
@@ -533,7 +534,12 @@ const ClienteDetalle = () => {
                 {subRubroNombre && ` · ${subRubroNombre}`}
               </p>
             )}
-            <h1 className="mt-1 text-xl font-bold leading-tight">{cliente.nombre_comercial}</h1>
+            {cliente.numero_cliente && (
+              <p className="mt-1 text-[11px] font-bold tracking-widest text-accent/80 uppercase">
+                ID {String(cliente.numero_cliente).padStart(4, "0")}
+              </p>
+            )}
+            <h1 className="text-xl font-bold leading-tight">{cliente.nombre_comercial}</h1>
             {cliente.razon_social && (
               <p className="mt-0.5 text-xs text-primary-foreground/70">{cliente.razon_social}</p>
             )}

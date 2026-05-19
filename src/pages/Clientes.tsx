@@ -11,6 +11,7 @@ import { useProfile } from "@/hooks/useProfile";
 
 interface ClienteReal {
   id: string;
+  numero_cliente: number | null;
   nombre_comercial: string;
   rubro: string | null;
   direccion: string | null;
@@ -45,7 +46,7 @@ const Clientes = () => {
 
     let query = supabase
       .from("clientes")
-      .select("id, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion, creado_por, ejecutivo_id, ejecutivo:ejecutivo_id(nombre, apellido)")
+      .select("id, numero_cliente, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion, creado_por, ejecutivo_id, ejecutivo:ejecutivo_id(nombre, apellido)")
       .eq("activo", true)
       .order("nombre_comercial");
 
@@ -60,6 +61,7 @@ const Clientes = () => {
 
     const mapped = (data ?? []).map((c: any) => ({
       ...c,
+      numero_cliente: c.numero_cliente ?? null,
       ejecutivo_id: c.ejecutivo_id ?? null,
       creado_por: c.creado_por ?? null,
       ejecutivo_nombre: c.ejecutivo
@@ -73,11 +75,14 @@ const Clientes = () => {
 
   const filtered = useMemo(() => {
     return clientes.filter((c) => {
+      const qLower = q.toLowerCase();
+      const idStr = c.numero_cliente ? String(c.numero_cliente).padStart(4, "0") : "";
       const matchQ =
         !q ||
-        c.nombre_comercial.toLowerCase().includes(q.toLowerCase()) ||
-        (c.rubro ?? "").toLowerCase().includes(q.toLowerCase()) ||
-        (c.ciudad ?? "").toLowerCase().includes(q.toLowerCase());
+        c.nombre_comercial.toLowerCase().includes(qLower) ||
+        (c.rubro ?? "").toLowerCase().includes(qLower) ||
+        (c.ciudad ?? "").toLowerCase().includes(qLower) ||
+        idStr.includes(q.replace(/\D/g, "")) // busca por número (ignora letras)
 
       let matchF: boolean;
       if (canManage) {
@@ -110,7 +115,7 @@ const Clientes = () => {
         <div className="relative">
           <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar cliente, rubro o ciudad..."
+            placeholder="Buscar por nombre, ID, rubro o ciudad..."
             value={q}
             onChange={(e) => setQ(e.target.value)}
             className="h-12 rounded-2xl border-border bg-card pl-10 shadow-card"
@@ -161,6 +166,11 @@ const Clientes = () => {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
+                    {c.numero_cliente && (
+                      <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-0.5">
+                        ID {String(c.numero_cliente).padStart(4, "0")}
+                      </p>
+                    )}
                     <h3 className="truncate text-sm font-bold">{c.nombre_comercial}</h3>
                     {c.rubro && <p className="mt-0.5 text-xs text-muted-foreground">{c.rubro}</p>}
                     {/* Ejecutivo asignado: visible para canManage y para ejecutivos cuando no es su cliente */}
