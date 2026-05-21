@@ -4,7 +4,7 @@ import {
   ArrowLeft, MapPin, Phone, Building2, FileText, Calendar,
   Plus, Car, PhoneCall, Mail, CheckCircle2, Clock, Loader2,
   ChevronDown, ChevronUp, User, UserCheck, Pencil, MessageCircle,
-  AlertTriangle, RotateCcw, Camera, AlertCircle
+  AlertTriangle, RotateCcw
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -45,20 +45,10 @@ interface Cliente {
   created_at: string | null;
 }
 
-interface TipoResultado {
-  id: string;
-  nombre: string;
-  tipo_formulario: "sin_medios" | "nota_comercial" | "nota_reclamo" | null;
-  activo: boolean;
-  orden: number;
-}
-
 interface Gestion {
   id: number;
   tipo: string;
   resultado: string | null;
-  resultado_id: string | null;
-  datos_extra: Record<string, unknown> | null;
   nota: string | null;
   fecha_inicio: string | null;
   created_at: string;
@@ -94,6 +84,15 @@ const TIPOS_GESTION = [
   { key: "otro",      label: "Otro",       icon: FileText,      color: "bg-gray-100 text-gray-700" },
 ];
 
+const RESULTADOS = [
+  { key: "atendido",     label: "✅ Atendido" },
+  { key: "comprometido", label: "🤝 Comprometido" },
+  { key: "proxima_cita", label: "📅 Próxima cita" },
+  { key: "no_atendido",  label: "📵 No atendido" },
+  { key: "rechazo",      label: "❌ Rechazo" },
+  { key: "pago",         label: "💰 Pagó" },
+  { key: "sin_resultado",label: "➖ Sin resultado" },
+];
 
 const INSTANCIA_COLORS: Record<string, string> = {
   CENSO: "bg-gray-500",
@@ -120,7 +119,6 @@ const ClienteDetalle = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [guardando, setGuardando] = useState(false);
-  const [showRelevamiento, setShowRelevamiento] = useState(false);
 
   // Historial de instancias
   const [historial, setHistorial] = useState<HistorialInstancia[]>([]);
@@ -165,36 +163,10 @@ const ClienteDetalle = () => {
 
   const [form, setForm] = useState({
     tipo: "visita",
+    resultado: "",
     notas: "",
     proxima_accion: "",
   });
-
-  // Tipos de resultado dinámicos
-  const [tiposResultado, setTiposResultado] = useState<TipoResultado[]>([]);
-  const [cargandoResultados, setCargandoResultados] = useState(false);
-  const [resultadoId, setResultadoId] = useState("");
-
-  // Campos especiales según tipo_formulario
-  const [receptorNombre, setReceptorNombre] = useState("");
-  const [receptorApellido, setReceptorApellido] = useState("");
-  const [fechaEntrega, setFechaEntrega] = useState("");
-
-  // Computed: resultado seleccionado y su tipo de formulario
-  const resultadoSeleccionado = tiposResultado.find((t) => t.id === resultadoId) ?? null;
-  const tipoFormulario = resultadoSeleccionado?.tipo_formulario ?? null;
-
-  // Filtrado secuencial de nota_reclamo: solo muestra el próximo pendiente
-  const tiposResultadoFiltrados = (() => {
-    const completedIds = new Set<string>(gestiones.map((g) => g.resultado_id).filter(Boolean) as string[]);
-    const notaReclamo = tiposResultado
-      .filter((t) => t.tipo_formulario === "nota_reclamo")
-      .sort((a, b) => a.orden - b.orden);
-    const proxPendiente = notaReclamo.find((t) => !completedIds.has(t.id));
-    return [
-      ...tiposResultado.filter((t) => t.tipo_formulario !== "nota_reclamo"),
-      ...(proxPendiente ? [proxPendiente] : []),
-    ];
-  })();
 
   const esPropio = cliente?.ejecutivo_id === user?.id;
   // Ejecutivo que creó el cliente mientras está en CENSO (puede editar para cargar tarifa)
@@ -206,30 +178,7 @@ const ClienteDetalle = () => {
     cargarGestiones();
     cargarHistorial();
     cargarCobros();
-    cargarResultados();
   }, [id]);
-
-  const cargarResultados = async () => {
-    setCargandoResultados(true);
-    const { data } = await supabase
-      .from("tipos_resultado")
-      .select("id, nombre, tipo_formulario, activo, orden")
-      .eq("activo", true)
-      .order("orden", { ascending: true })
-      .order("nombre", { ascending: true });
-    setTiposResultado(data ?? []);
-    setCargandoResultados(false);
-  };
-
-  const handleResultadoChange = (id: string) => {
-    setResultadoId(id);
-    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
-    // Auto-completar fecha de hoy para nota_comercial y nota_reclamo
-    const tipo = tiposResultado.find((t) => t.id === id);
-    if (tipo?.tipo_formulario === "nota_comercial" || tipo?.tipo_formulario === "nota_reclamo") {
-      setFechaEntrega(new Date().toISOString().split("T")[0]);
-    }
-  };
 
   useEffect(() => {
     if (!canManage) return;
@@ -310,7 +259,7 @@ const ClienteDetalle = () => {
     const { data } = await supabase
       .from("gestiones")
       .select(`
-        id, tipo, resultado, resultado_id, datos_extra, nota, fecha_inicio, created_at, foto_url,
+        id, tipo, resultado, nota, fecha_inicio, created_at, foto_url,
         ejecutivo:ejecutivo_id(nombre, apellido)
       `)
       .eq("cliente_id", id)
@@ -512,35 +461,15 @@ const ClienteDetalle = () => {
 
   const registrarActividad = async () => {
     if (!form.tipo) { toast.error("Seleccioná el tipo de gestión"); return; }
-    if (!resultadoId) { toast.error("Seleccioná un resultado"); return; }
-    if ((tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && !receptorNombre.trim()) {
-      toast.error("Ingresá el nombre de quien recibió la nota"); return;
-    }
+    if (!form.resultado) { toast.error("Seleccioná un resultado"); return; }
 
     setGuardando(true);
-
-    // Construir datos_extra según tipo de formulario
-    let datosExtra: Record<string, unknown> | null = null;
-    if (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") {
-      datosExtra = {
-        receptor_nombre: receptorNombre.trim(),
-        receptor_apellido: receptorApellido.trim() || null,
-        fecha_entrega: fechaEntrega || null,
-      };
-    }
-
-    // Auto proxima_accion para sin_medios: hoy + 30 días
-    const proximaFinal = tipoFormulario === "sin_medios"
-      ? (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().split("T")[0]; })()
-      : form.proxima_accion || null;
 
     const { error } = await supabase.from("gestiones").insert({
       cliente_id: parseInt(id!),
       ejecutivo_id: user!.id,
       tipo: form.tipo,
-      resultado: resultadoSeleccionado?.nombre ?? "",
-      resultado_id: resultadoId,
-      datos_extra: datosExtra,
+      resultado: form.resultado,
       nota: form.notas || null,
       fecha_inicio: new Date().toISOString(),
     });
@@ -554,13 +483,11 @@ const ClienteDetalle = () => {
     // Actualizar ultima_gestion en el cliente
     await supabase.from("clientes").update({
       ultima_gestion: new Date().toISOString(),
-      proxima_accion: proximaFinal,
+      proxima_accion: form.proxima_accion || null,
     }).eq("id", id);
 
     toast.success("Actividad registrada en la bitácora");
-    setForm({ tipo: "visita", notas: "", proxima_accion: "" });
-    setResultadoId("");
-    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
+    setForm({ tipo: "visita", resultado: "", notas: "", proxima_accion: "" });
     setShowForm(false);
     await cargarGestiones();
     await cargarCliente();
@@ -681,28 +608,6 @@ const ClienteDetalle = () => {
                   : "font-semibold text-success"
               }
             />
-          )}
-          {cliente.notas && (
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
-                <FileText className="h-4 w-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <button
-                  type="button"
-                  onClick={() => setShowRelevamiento((v) => !v)}
-                  className="flex w-full items-center justify-between gap-2 text-left"
-                >
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Relevamiento de datos</p>
-                  {showRelevamiento
-                    ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                </button>
-                {showRelevamiento && (
-                  <p className="mt-1.5 text-sm whitespace-pre-wrap text-foreground leading-relaxed">{cliente.notas}</p>
-                )}
-              </div>
-            </div>
           )}
           {cliente.created_at && (
             <InfoRow
@@ -1096,49 +1001,16 @@ const ClienteDetalle = () => {
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Resultado <span className="text-destructive">*</span></Label>
                   <select
-                    value={resultadoId}
-                    onChange={(e) => handleResultadoChange(e.target.value)}
-                    disabled={cargandoResultados}
+                    value={form.resultado}
+                    onChange={(e) => setForm((p) => ({ ...p, resultado: e.target.value }))}
                     className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
                   >
                     <option value="">¿Cómo fue la gestión?</option>
-                    {tiposResultadoFiltrados.map((r) => (
-                      <option key={r.id} value={r.id}>{r.nombre}</option>
+                    {RESULTADOS.map((r) => (
+                      <option key={r.key} value={r.key}>{r.label}</option>
                     ))}
                   </select>
                 </div>
-
-                {/* Bloque especial: Sin Medios */}
-                {tipoFormulario === "sin_medios" && (
-                  <div className="rounded-xl border border-warning/40 bg-warning/5 p-3.5 flex items-start gap-2.5">
-                    <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-                    <p className="text-xs text-warning font-semibold">🔇 Sin Medios — se agendará revisita automáticamente en 30 días.</p>
-                  </div>
-                )}
-
-                {/* Bloque especial: Nota (nota_comercial y nota_reclamo) */}
-                {(tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && (
-                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-                    <p className="text-xs font-bold text-primary uppercase tracking-wider">
-                      📄 {resultadoSeleccionado?.nombre ?? "Nota"}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">Datos de quien recibió la nota.</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nombre receptor <span className="text-destructive">*</span></Label>
-                        <Input placeholder="Nombre" value={receptorNombre} onChange={(e) => setReceptorNombre(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Apellido</Label>
-                        <Input placeholder="Apellido" value={receptorApellido} onChange={(e) => setReceptorApellido(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Fecha de entrega</Label>
-                      <Input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} className="h-9 text-sm" />
-                    </div>
-                  </div>
-                )}
 
                 {/* Notas */}
                 <div className="space-y-1.5">
@@ -1152,21 +1024,19 @@ const ClienteDetalle = () => {
                   />
                 </div>
 
-                {/* Próxima acción — oculto para sin_medios (se calcula automáticamente) */}
-                {tipoFormulario !== "sin_medios" && (
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Próxima acción</Label>
-                    <div className="relative">
-                      <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        type="date"
-                        value={form.proxima_accion}
-                        onChange={(e) => setForm((p) => ({ ...p, proxima_accion: e.target.value }))}
-                        className="h-11 pl-10"
-                      />
-                    </div>
+                {/* Próxima acción */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Próxima acción</Label>
+                  <div className="relative">
+                    <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="date"
+                      value={form.proxima_accion}
+                      onChange={(e) => setForm((p) => ({ ...p, proxima_accion: e.target.value }))}
+                      className="h-11 pl-10"
+                    />
                   </div>
-                )}
+                </div>
 
                 <Button onClick={registrarActividad} disabled={guardando} className="w-full h-11 gap-2 font-semibold">
                   {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -1319,11 +1189,11 @@ const ClienteDetalle = () => {
             <div className="space-y-2.5">
               {gestiones.map((g) => {
                 const tipoInfo = TIPOS_GESTION.find((t) => t.key === g.tipo) ?? TIPOS_GESTION[0];
+                const resultadoInfo = RESULTADOS.find((r) => r.key === g.resultado);
                 const fecha = new Date(g.fecha_inicio ?? g.created_at);
                 const ejecutorNombre = g.ejecutivo
                   ? `${(g.ejecutivo as any).nombre ?? ""} ${(g.ejecutivo as any).apellido ?? ""}`.trim()
                   : "—";
-                const de = g.datos_extra as any;
 
                 return (
                   <div key={g.id} className="rounded-2xl border border-border bg-card p-4 shadow-card">
@@ -1340,35 +1210,6 @@ const ClienteDetalle = () => {
 
                     {g.nota && <p className="mt-2.5 text-sm">{g.nota}</p>}
 
-                    {/* datos_extra: Medición de Incógnito */}
-                    {de && (de.ancho || de.alto || de.fondo || de.material) && (
-                      <div className="mt-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 space-y-1">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-primary">📐 Medición</p>
-                        {(de.ancho || de.alto || de.fondo) && (
-                          <p className="text-xs text-foreground">
-                            {[de.ancho && `Ancho: ${de.ancho}`, de.alto && `Alto: ${de.alto}`, de.fondo && `Fondo: ${de.fondo}`].filter(Boolean).join(" · ")}
-                          </p>
-                        )}
-                        {de.material && <p className="text-xs text-muted-foreground">Material: {de.material}</p>}
-                        {de.observaciones && <p className="text-xs text-muted-foreground italic">{de.observaciones}</p>}
-                      </div>
-                    )}
-
-                    {/* datos_extra: Nota Comercial */}
-                    {de && de.receptor_nombre && (
-                      <div className="mt-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 space-y-0.5">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-primary">📄 Receptor</p>
-                        <p className="text-xs text-foreground">
-                          {[de.receptor_nombre, de.receptor_apellido].filter(Boolean).join(" ")}
-                        </p>
-                        {de.fecha_entrega && (
-                          <p className="text-xs text-muted-foreground">
-                            Entrega: {new Date(de.fecha_entrega + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
-                          </p>
-                        )}
-                      </div>
-                    )}
-
                     {g.foto_url && (
                       <a href={g.foto_url} target="_blank" rel="noopener noreferrer" className="mt-2.5 block">
                         <img
@@ -1384,10 +1225,10 @@ const ClienteDetalle = () => {
                     )}
 
                     <div className="mt-2.5 flex items-center justify-between text-[11px]">
-                      {g.resultado && (
-                        <span className="font-semibold">{g.resultado}</span>
+                      {resultadoInfo && (
+                        <span className="font-semibold">{resultadoInfo.label}</span>
                       )}
-                      <span className="flex items-center gap-1 text-muted-foreground ml-auto">
+                      <span className="flex items-center gap-1 text-muted-foreground">
                         <User className="h-3 w-3" /> {ejecutorNombre}
                       </span>
                     </div>

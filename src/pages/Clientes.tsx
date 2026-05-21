@@ -24,6 +24,7 @@ interface ClienteReal {
   ejecutivo_nombre: string | null;
   ejecutivo_id: string | null;
   creado_por: string | null;
+  creado_por_nombre: string | null;
 }
 
 const Clientes = () => {
@@ -35,6 +36,18 @@ const Clientes = () => {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<string>("all");
+  const [censoEjFilter, setCensoEjFilter] = useState<string>("");
+
+  // Lista de ejecutivos que tienen clientes en CENSO (para sub-filtro)
+  const censoEjecutivos = useMemo(() => {
+    const map = new Map<string, string>();
+    clientes
+      .filter((c) => c.instancia === "CENSO" && c.creado_por && c.creado_por_nombre)
+      .forEach((c) => {
+        if (!map.has(c.creado_por!)) map.set(c.creado_por!, c.creado_por_nombre!);
+      });
+    return Array.from(map.entries()).map(([id, nombre]) => ({ id, nombre }));
+  }, [clientes]);
 
   useEffect(() => {
     if (!user) return;
@@ -46,7 +59,7 @@ const Clientes = () => {
 
     let query = supabase
       .from("clientes")
-      .select("id, numero_cliente, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion, creado_por, ejecutivo_id, ejecutivo:ejecutivo_id(nombre, apellido)")
+      .select("id, numero_cliente, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion, creado_por, ejecutivo_id, ejecutivo:ejecutivo_id(nombre, apellido), creador:creado_por(nombre, apellido)")
       .eq("activo", true)
       .order("nombre_comercial");
 
@@ -66,6 +79,9 @@ const Clientes = () => {
       creado_por: c.creado_por ?? null,
       ejecutivo_nombre: c.ejecutivo
         ? `${c.ejecutivo.nombre ?? ""} ${c.ejecutivo.apellido ?? ""}`.trim()
+        : null,
+      creado_por_nombre: c.creador
+        ? `${c.creador.nombre ?? ""} ${c.creador.apellido ?? ""}`.trim()
         : null,
     }));
 
@@ -88,6 +104,10 @@ const Clientes = () => {
       if (canManage) {
         // Admin / supervisor: filtro normal sin restricciones
         matchF = filter === "all" || (c.instancia ?? "CENSO") === filter;
+        // Sub-filtro por ejecutivo creador en CENSO
+        if (matchF && filter === "CENSO" && censoEjFilter) {
+          matchF = c.creado_por === censoEjFilter;
+        }
       } else if (filter === "all") {
         // TODOS: consulta global para evitar duplicados
         matchF = true;
@@ -101,7 +121,7 @@ const Clientes = () => {
 
       return matchQ && matchF;
     });
-  }, [clientes, q, filter, user, canManage]);
+  }, [clientes, q, filter, censoEjFilter, user, canManage]);
 
   return (
     <>
@@ -132,12 +152,38 @@ const Clientes = () => {
               { key: "COBRANZAS", label: "Cobranzas", color: "#22c55e" },
               { key: "JURIDICO", label: "Jurídico", color: "#ef4444" },
             ].map((f) => (
-              <FilterChip key={f.key} active={filter === f.key} onClick={() => setFilter(f.key)} color={f.color}>
+              <FilterChip
+                key={f.key}
+                active={filter === f.key}
+                onClick={() => { setFilter(f.key); setCensoEjFilter(""); }}
+                color={f.color}
+              >
                 {f.label}
               </FilterChip>
             ))}
           </div>
         </div>
+
+        {/* Sub-filtro por ejecutivo — solo en CENSO y para canManage */}
+        {canManage && filter === "CENSO" && censoEjecutivos.length > 0 && (
+          <div className="-mx-4 mt-2 overflow-x-auto px-4 pb-1">
+            <div className="flex gap-1.5 items-center">
+              <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-1">Ejecutivo:</span>
+              <FilterChip active={censoEjFilter === ""} onClick={() => setCensoEjFilter("")}>
+                Todos
+              </FilterChip>
+              {censoEjecutivos.map((ej) => (
+                <FilterChip
+                  key={ej.id}
+                  active={censoEjFilter === ej.id}
+                  onClick={() => setCensoEjFilter(ej.id)}
+                >
+                  {ej.nombre}
+                </FilterChip>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Lista */}
         <div className="mt-4 space-y-2.5 pb-4">
@@ -173,8 +219,15 @@ const Clientes = () => {
                     )}
                     <h3 className="truncate text-sm font-bold">{c.nombre_comercial}</h3>
                     {c.rubro && <p className="mt-0.5 text-xs text-muted-foreground">{c.rubro}</p>}
+                    {/* Creador visible en CENSO para canManage */}
+                    {canManage && c.instancia === "CENSO" && c.creado_por_nombre && (
+                      <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                        <User className="h-3 w-3" />
+                        Creado por {c.creado_por_nombre}
+                      </p>
+                    )}
                     {/* Ejecutivo asignado: visible para canManage y para ejecutivos cuando no es su cliente */}
-                    {c.ejecutivo_nombre && (canManage || c.ejecutivo_id !== user?.id) && (
+                    {c.ejecutivo_nombre && c.instancia !== "CENSO" && (canManage || c.ejecutivo_id !== user?.id) && (
                       <p className={cn(
                         "mt-0.5 flex items-center gap-1 text-[11px] font-semibold",
                         c.ejecutivo_id === user?.id ? "text-primary" : "text-muted-foreground"
