@@ -120,6 +120,7 @@ const ClienteDetalle = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [showRelevamiento, setShowRelevamiento] = useState(false);
 
   // Historial de instancias
   const [historial, setHistorial] = useState<HistorialInstancia[]>([]);
@@ -680,6 +681,28 @@ const ClienteDetalle = () => {
                   : "font-semibold text-success"
               }
             />
+          )}
+          {cliente.notas && (
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
+                <FileText className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <button
+                  type="button"
+                  onClick={() => setShowRelevamiento((v) => !v)}
+                  className="flex w-full items-center justify-between gap-2 text-left"
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Relevamiento de datos</p>
+                  {showRelevamiento
+                    ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                </button>
+                {showRelevamiento && (
+                  <p className="mt-1.5 text-sm whitespace-pre-wrap text-foreground leading-relaxed">{cliente.notas}</p>
+                )}
+              </div>
+            </div>
           )}
           {cliente.created_at && (
             <InfoRow

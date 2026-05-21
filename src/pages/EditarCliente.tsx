@@ -273,11 +273,11 @@ const EditarCliente = () => {
           />
         </div>
 
-        {/* Notas internas */}
+        {/* Relevamiento de Datos */}
         <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-3">
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notas internas</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Relevamiento de datos</p>
           <Textarea
-            placeholder="Observaciones, acuerdos, características del local..."
+            placeholder="Características del local: cantidad de mesas, pantallas, parlantes, horario de atención, tipo de música, etc."
             value={form.notas}
             onChange={(e) => set("notas", e.target.value)}
             rows={3}

@@ -5,6 +5,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -40,6 +41,7 @@ const NuevoCliente = () => {
     direccion: "",
     calle_secundaria: "",
     monto_licencia: "",
+    notas: "",
   });
 
   useEffect(() => {
@@ -87,6 +89,7 @@ const NuevoCliente = () => {
       direccion: form.direccion.trim() || null,
       calle_secundaria: form.calle_secundaria.trim() || null,
       tarifa_mensual: form.monto_licencia ? parseInt(form.monto_licencia.replace(/\D/g, "")) : null,
+      notas: form.notas.trim() || null,
       categoria_id: form.categoria_id,
       rubro_id: form.rubro_id,
       sub_rubro_id: form.sub_rubro_id || null,
@@ -221,6 +224,18 @@ const NuevoCliente = () => {
         <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Licencia</p>
           <Campo label="Monto estimado (Gs.)" placeholder="500000" value={form.monto_licencia} onChange={(v) => set("monto_licencia", v)} type="number" />
+        </div>
+
+        {/* Relevamiento de Datos */}
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-3">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Relevamiento de datos</p>
+          <Textarea
+            placeholder="Características del local: cantidad de mesas, pantallas, parlantes, horario de atención, tipo de música, etc."
+            value={form.notas}
+            onChange={(e) => set("notas", e.target.value)}
+            rows={3}
+            className="resize-none"
+          />
         </div>
 
         {/* Info según tipo */}
