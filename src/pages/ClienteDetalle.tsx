@@ -224,9 +224,9 @@ const ClienteDetalle = () => {
   const handleResultadoChange = (id: string) => {
     setResultadoId(id);
     setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
-    // Auto-completar fecha de hoy para nota_comercial
+    // Auto-completar fecha de hoy para nota_comercial y nota_reclamo
     const tipo = tiposResultado.find((t) => t.id === id);
-    if (tipo?.tipo_formulario === "nota_comercial") {
+    if (tipo?.tipo_formulario === "nota_comercial" || tipo?.tipo_formulario === "nota_reclamo") {
       setFechaEntrega(new Date().toISOString().split("T")[0]);
     }
   };
@@ -513,15 +513,15 @@ const ClienteDetalle = () => {
   const registrarActividad = async () => {
     if (!form.tipo) { toast.error("Seleccioná el tipo de gestión"); return; }
     if (!resultadoId) { toast.error("Seleccioná un resultado"); return; }
-    if (tipoFormulario === "nota_comercial" && !receptorNombre.trim()) {
-      toast.error("Ingresá el nombre del receptor para la nota comercial"); return;
+    if ((tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && !receptorNombre.trim()) {
+      toast.error("Ingresá el nombre de quien recibió la nota"); return;
     }
 
     setGuardando(true);
 
     // Construir datos_extra según tipo de formulario
     let datosExtra: Record<string, unknown> | null = null;
-    if (tipoFormulario === "nota_comercial") {
+    if (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") {
       datosExtra = {
         receptor_nombre: receptorNombre.trim(),
         receptor_apellido: receptorApellido.trim() || null,
@@ -1116,10 +1116,13 @@ const ClienteDetalle = () => {
                   </div>
                 )}
 
-                {/* Bloque especial: Nota Info & Prop. Com. */}
-                {tipoFormulario === "nota_comercial" && (
+                {/* Bloque especial: Nota (nota_comercial y nota_reclamo) */}
+                {(tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && (
                   <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-                    <p className="text-xs font-bold text-primary uppercase tracking-wider">📄 Nota Info & Prop. Com.</p>
+                    <p className="text-xs font-bold text-primary uppercase tracking-wider">
+                      📄 {resultadoSeleccionado?.nombre ?? "Nota"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">Datos de quien recibió la nota.</p>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
                         <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nombre receptor <span className="text-destructive">*</span></Label>

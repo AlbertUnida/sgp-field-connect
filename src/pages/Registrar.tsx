@@ -199,9 +199,9 @@ const Registrar = () => {
   const handleResultadoChange = (id: string) => {
     setResultadoId(id);
     setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
-    // Auto-completar fecha de hoy para nota_comercial
+    // Auto-completar fecha de hoy para nota_comercial y nota_reclamo
     const tipo = tiposResultado.find((t) => t.id === id);
-    if (tipo?.tipo_formulario === "nota_comercial") {
+    if (tipo?.tipo_formulario === "nota_comercial" || tipo?.tipo_formulario === "nota_reclamo") {
       setFechaEntrega(new Date().toISOString().split("T")[0]);
     }
   };
@@ -297,7 +297,7 @@ const Registrar = () => {
     if (!resultadoId) { toast.error("Seleccioná el resultado de la gestión"); return; }
 
     // Validaciones de formularios especiales
-    if (tipoFormulario === "nota_comercial" && !receptorNombre.trim()) {
+    if ((tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && !receptorNombre.trim()) {
       toast.error("Ingresá el nombre de quien recibió la nota");
       return;
     }
@@ -339,14 +339,14 @@ const Registrar = () => {
 
     // Construir datos_extra según tipo_formulario
     let datosExtra: Record<string, string> | null = null;
-    if (tipoFormulario === "nota_comercial") {
+    if (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") {
       datosExtra = {
         receptor_nombre: receptorNombre.trim(),
         receptor_apellido: receptorApellido.trim(),
         fecha_entrega: fechaEntrega,
       };
     }
-    // sin_medios y nota_reclamo no tienen datos extra
+    // sin_medios no tiene datos extra
 
     const { error } = await supabase.from("gestiones").insert({
       cliente_id: parseInt(clienteSeleccionado.id),
@@ -563,15 +563,17 @@ const Registrar = () => {
             </div>
           )}
 
-          {/* ── Formulario especial: Nota Info & Prop. Com. ── */}
-          {tipoFormulario === "nota_comercial" && (
+          {/* ── Formulario especial: Nota (nota_comercial y nota_reclamo) ── */}
+          {(tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && (
             <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-              <p className="text-xs font-bold uppercase tracking-wider text-primary">📄 Nota Info & Prop. Com.</p>
-              <p className="text-[11px] text-muted-foreground">Datos de quien recibió la nota o propuesta comercial.</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-primary">
+                📄 {resultadoSeleccionado?.nombre ?? "Nota"}
+              </p>
+              <p className="text-[11px] text-muted-foreground">Datos de quien recibió la nota.</p>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label className="text-[10px] font-bold uppercase text-muted-foreground">
-                    Nombre <span className="text-destructive">*</span>
+                    Nombre receptor <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     placeholder="Nombre"
