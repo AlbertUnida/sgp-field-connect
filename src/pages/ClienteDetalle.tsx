@@ -48,7 +48,7 @@ interface Cliente {
 interface TipoResultado {
   id: string;
   nombre: string;
-  tipo_formulario: "medicion_incognito" | "sin_medios" | "nota_comercial" | null;
+  tipo_formulario: "sin_medios" | "nota_comercial" | "nota_reclamo" | null;
   activo: boolean;
   orden: number;
 }
@@ -175,11 +175,6 @@ const ClienteDetalle = () => {
   const [resultadoId, setResultadoId] = useState("");
 
   // Campos especiales según tipo_formulario
-  const [medAncho, setMedAncho] = useState("");
-  const [medAlto, setMedAlto] = useState("");
-  const [medFondo, setMedFondo] = useState("");
-  const [medMaterial, setMedMaterial] = useState("");
-  const [medObservaciones, setMedObservaciones] = useState("");
   const [receptorNombre, setReceptorNombre] = useState("");
   const [receptorApellido, setReceptorApellido] = useState("");
   const [fechaEntrega, setFechaEntrega] = useState("");
@@ -187,6 +182,19 @@ const ClienteDetalle = () => {
   // Computed: resultado seleccionado y su tipo de formulario
   const resultadoSeleccionado = tiposResultado.find((t) => t.id === resultadoId) ?? null;
   const tipoFormulario = resultadoSeleccionado?.tipo_formulario ?? null;
+
+  // Filtrado secuencial de nota_reclamo: solo muestra el próximo pendiente
+  const tiposResultadoFiltrados = (() => {
+    const completedIds = new Set<string>(gestiones.map((g) => g.resultado_id).filter(Boolean) as string[]);
+    const notaReclamo = tiposResultado
+      .filter((t) => t.tipo_formulario === "nota_reclamo")
+      .sort((a, b) => a.orden - b.orden);
+    const proxPendiente = notaReclamo.find((t) => !completedIds.has(t.id));
+    return [
+      ...tiposResultado.filter((t) => t.tipo_formulario !== "nota_reclamo"),
+      ...(proxPendiente ? [proxPendiente] : []),
+    ];
+  })();
 
   const esPropio = cliente?.ejecutivo_id === user?.id;
   // Ejecutivo que creó el cliente mientras está en CENSO (puede editar para cargar tarifa)
@@ -215,10 +223,12 @@ const ClienteDetalle = () => {
 
   const handleResultadoChange = (id: string) => {
     setResultadoId(id);
-    // Limpiar campos especiales al cambiar resultado
-    setMedAncho(""); setMedAlto(""); setMedFondo("");
-    setMedMaterial(""); setMedObservaciones("");
     setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
+    // Auto-completar fecha de hoy para nota_comercial
+    const tipo = tiposResultado.find((t) => t.id === id);
+    if (tipo?.tipo_formulario === "nota_comercial") {
+      setFechaEntrega(new Date().toISOString().split("T")[0]);
+    }
   };
 
   useEffect(() => {
@@ -511,15 +521,7 @@ const ClienteDetalle = () => {
 
     // Construir datos_extra según tipo de formulario
     let datosExtra: Record<string, unknown> | null = null;
-    if (tipoFormulario === "medicion_incognito") {
-      datosExtra = {
-        ancho: medAncho || null,
-        alto: medAlto || null,
-        fondo: medFondo || null,
-        material: medMaterial || null,
-        observaciones: medObservaciones || null,
-      };
-    } else if (tipoFormulario === "nota_comercial") {
+    if (tipoFormulario === "nota_comercial") {
       datosExtra = {
         receptor_nombre: receptorNombre.trim(),
         receptor_apellido: receptorApellido.trim() || null,
@@ -558,8 +560,6 @@ const ClienteDetalle = () => {
     toast.success("Actividad registrada en la bitácora");
     setForm({ tipo: "visita", notas: "", proxima_accion: "" });
     setResultadoId("");
-    setMedAncho(""); setMedAlto(""); setMedFondo("");
-    setMedMaterial(""); setMedObservaciones("");
     setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
     setShowForm(false);
     await cargarGestiones();
@@ -1102,34 +1102,11 @@ const ClienteDetalle = () => {
                     className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
                   >
                     <option value="">¿Cómo fue la gestión?</option>
-                    {tiposResultado.map((r) => (
+                    {tiposResultadoFiltrados.map((r) => (
                       <option key={r.id} value={r.id}>{r.nombre}</option>
                     ))}
                   </select>
                 </div>
-
-                {/* Bloque especial: Medición de Incógnito */}
-                {tipoFormulario === "medicion_incognito" && (
-                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-                    <p className="text-xs font-bold text-primary uppercase tracking-wider">📐 Medición de Incógnito</p>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Ancho</Label>
-                        <Input placeholder="ej: 3m" value={medAncho} onChange={(e) => setMedAncho(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Alto</Label>
-                        <Input placeholder="ej: 2m" value={medAlto} onChange={(e) => setMedAlto(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Fondo</Label>
-                        <Input placeholder="ej: 0.5m" value={medFondo} onChange={(e) => setMedFondo(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                    </div>
-                    <Input placeholder="Material / Tipo de soporte" value={medMaterial} onChange={(e) => setMedMaterial(e.target.value)} className="h-9 text-sm" />
-                    <Textarea placeholder="Observaciones adicionales..." value={medObservaciones} onChange={(e) => setMedObservaciones(e.target.value)} rows={2} className="resize-none text-sm" />
-                  </div>
-                )}
 
                 {/* Bloque especial: Sin Medios */}
                 {tipoFormulario === "sin_medios" && (
