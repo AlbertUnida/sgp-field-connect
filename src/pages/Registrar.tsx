@@ -52,6 +52,10 @@ const Registrar = () => {
   const [busqueda, setBusqueda] = useState("");
   const [clienteSeleccionado, setClienteSeleccionado] = useState<ClienteOpcion | null>(null);
   const [mostrarDropdown, setMostrarDropdown] = useState(false);
+
+  // Selector de evento (para clientes tipo "evento")
+  const [eventosCliente, setEventosCliente] = useState<{ id: string; numero_evento: number; nombre_evento: string | null; fecha_evento: string | null; estado: string }[]>([]);
+  const [eventoSeleccionado, setEventoSeleccionado] = useState<string>(""); // evento_id
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -180,9 +184,9 @@ const Registrar = () => {
     setBusqueda(c.nombre_comercial);
     setMostrarDropdown(false);
     inputRef.current?.blur();
-    // Limpiar resultado si el filtro ya no lo incluye
     setResultadoId("");
     setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
+    setEventoSeleccionado("");
     // Fetch gestiones para filtro secuencial de nota_reclamo
     const { data } = await supabase
       .from("gestiones")
@@ -191,6 +195,18 @@ const Registrar = () => {
       .not("resultado_id", "is", null);
     const ids = new Set<string>((data ?? []).map((g: any) => g.resultado_id).filter(Boolean));
     setResultadosCompletadosCliente(ids);
+    // Si es venue de eventos, cargar sus eventos
+    if (c.tipo_cliente === "evento") {
+      const { data: evs } = await supabase
+        .from("eventos_agenda")
+        .select("id, numero_evento, nombre_evento, fecha_evento, estado")
+        .eq("cliente_id", c.id)
+        .in("estado", ["prospecto", "confirmado"])
+        .order("fecha_evento", { ascending: true });
+      setEventosCliente(evs ?? []);
+    } else {
+      setEventosCliente([]);
+    }
   };
 
   const limpiarCliente = () => {
@@ -198,6 +214,8 @@ const Registrar = () => {
     setBusqueda("");
     setMostrarDropdown(false);
     setResultadosCompletadosCliente(new Set());
+    setEventosCliente([]);
+    setEventoSeleccionado("");
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
@@ -300,6 +318,9 @@ const Registrar = () => {
 
   const guardar = async () => {
     if (!clienteSeleccionado) { toast.error("Seleccioná un cliente"); return; }
+    if (clienteSeleccionado.tipo_cliente === "evento" && !eventoSeleccionado) {
+      toast.error("Seleccioná el evento para registrar la gestión"); return;
+    }
     if (!resultadoId) { toast.error("Seleccioná el resultado de la gestión"); return; }
 
     // Validaciones de formularios especiales
@@ -356,6 +377,7 @@ const Registrar = () => {
 
     const { error } = await supabase.from("gestiones").insert({
       cliente_id: parseInt(clienteSeleccionado.id),
+      evento_id: eventoSeleccionado || null,
       ejecutivo_id: user!.id,
       tipo,
       resultado: resultadoSeleccionado?.nombre ?? "",
@@ -528,6 +550,34 @@ const Registrar = () => {
               </p>
             )}
           </div>
+
+          {/* Selector de evento — solo para clientes tipo "evento" */}
+          {clienteSeleccionado?.tipo_cliente === "evento" && clienteSeleccionado.instancia !== "CENSO" && (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Evento <span className="text-destructive">*</span>
+              </Label>
+              {eventosCliente.length === 0 ? (
+                <p className="rounded-xl border border-amber-300 bg-amber-50/50 dark:bg-amber-950/20 px-3 py-3 text-xs text-amber-700 dark:text-amber-400 font-semibold">
+                  ⚠️ Este venue no tiene eventos activos. Creá uno desde la ficha del cliente.
+                </p>
+              ) : (
+                <select
+                  value={eventoSeleccionado}
+                  onChange={(e) => setEventoSeleccionado(e.target.value)}
+                  className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                >
+                  <option value="">Seleccioná el evento...</option>
+                  {eventosCliente.map((ev) => (
+                    <option key={ev.id} value={ev.id}>
+                      EV-{String(ev.numero_evento).padStart(3, "0")} — {ev.nombre_evento ?? "Sin nombre"}
+                      {ev.fecha_evento ? ` · ${new Date(ev.fecha_evento + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short" })}` : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
 
           {/* Resultado */}
           <div className="space-y-1.5">

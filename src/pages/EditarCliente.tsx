@@ -46,9 +46,8 @@ const EditarCliente = () => {
     categoria_id: "",
     rubro_id: "",
     sub_rubro_id: "",
-    // Campos de Evento
+    // Campos del venue
     nombre_salon: "",
-    tipo_evento: "",
     capacidad: "",
   });
 
@@ -102,7 +101,6 @@ const EditarCliente = () => {
         rubro_id: cliente.rubro_id ?? "",
         sub_rubro_id: cliente.sub_rubro_id ?? "",
         nombre_salon: cliente.nombre_salon ?? "",
-        tipo_evento: cliente.tipo_evento ?? "",
         capacidad: cliente.capacidad ? String(cliente.capacidad) : "",
       });
       setLoading(false);
@@ -150,9 +148,8 @@ const EditarCliente = () => {
       categoria_id: form.categoria_id || null,
       rubro_id: form.rubro_id || null,
       sub_rubro_id: form.sub_rubro_id || null,
-      // Campos de Evento
+      // Campos del venue
       nombre_salon: tipoCliente === "evento" ? form.nombre_salon.trim() || null : null,
-      tipo_evento: tipoCliente === "evento" ? form.tipo_evento.trim() || null : null,
       capacidad: tipoCliente === "evento" && form.capacidad ? parseInt(form.capacidad.replace(/\D/g, "")) || null : null,
     }, { count: "exact" }).eq("id", id);
 
@@ -202,27 +199,11 @@ const EditarCliente = () => {
             value={form.email_cliente} onChange={(v) => set("email_cliente", v)} type="email" />
         </div>
 
-        {/* Campos específicos de Evento */}
+        {/* Campos específicos del Venue */}
         {tipoCliente === "evento" && (
           <div className="rounded-2xl border border-amber-300 bg-amber-50/50 dark:bg-amber-950/20 p-4 shadow-card space-y-4">
-            <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Datos del evento</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Datos del venue</p>
             <Campo label="Nombre del salón / espacio" placeholder="Salón Los Pinos" value={form.nombre_salon} onChange={(v) => set("nombre_salon", v)} />
-            <div className="space-y-1.5">
-              <Label>Tipo de evento</Label>
-              <select
-                value={form.tipo_evento}
-                onChange={(e) => set("tipo_evento", e.target.value)}
-                className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Seleccioná un tipo...</option>
-                <option value="casamiento">Casamiento</option>
-                <option value="quinceanos">Quinceaños</option>
-                <option value="corporativo">Corporativo</option>
-                <option value="social">Social / Privado</option>
-                <option value="musical">Musical / Show</option>
-                <option value="otro">Otro</option>
-              </select>
-            </div>
             <Campo label="Capacidad / Aforo (personas)" placeholder="300" value={form.capacidad} onChange={(v) => set("capacidad", v)} type="number" />
           </div>
         )}

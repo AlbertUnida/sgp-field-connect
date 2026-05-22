@@ -39,7 +39,6 @@ interface Cliente {
   notas: string | null;
   tipo_cliente: string | null;
   nombre_salon: string | null;
-  tipo_evento: string | null;
   capacidad: number | null;
   categoria: { nombre: string } | null;
   rubro_rel: { nombre: string } | null;
@@ -90,6 +89,16 @@ interface HistorialInstancia {
   ejecutivo: { nombre: string; apellido: string } | null;
 }
 
+interface EventoAgenda {
+  id: string;
+  numero_evento: number;
+  nombre_evento: string | null;
+  fecha_evento: string | null;
+  tipo_evento: string | null;
+  tarifa_evento: number | null;
+  estado: string;
+}
+
 const TIPOS_GESTION = [
   { key: "visita",    label: "Visita",     icon: Car,       color: "bg-blue-100 text-blue-700" },
   { key: "llamada",   label: "Llamada",    icon: PhoneCall, color: "bg-green-100 text-green-700" },
@@ -124,6 +133,10 @@ const ClienteDetalle = () => {
   const [showForm, setShowForm] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [showRelevamiento, setShowRelevamiento] = useState(false);
+
+  // Eventos agenda (para clientes tipo "evento")
+  const [eventosAgenda, setEventosAgenda] = useState<EventoAgenda[]>([]);
+  const [loadingEventos, setLoadingEventos] = useState(false);
 
   // Historial de instancias
   const [historial, setHistorial] = useState<HistorialInstancia[]>([]);
@@ -216,6 +229,24 @@ const ClienteDetalle = () => {
     cargarCobros();
     cargarResultados();
   }, [id]);
+
+  // Cargar eventos cuando ya sabemos que es tipo "evento"
+  useEffect(() => {
+    if (cliente?.tipo_cliente === "evento") {
+      cargarEventos();
+    }
+  }, [cliente?.tipo_cliente]);
+
+  const cargarEventos = async () => {
+    setLoadingEventos(true);
+    const { data } = await supabase
+      .from("eventos_agenda")
+      .select("id, numero_evento, nombre_evento, fecha_evento, tipo_evento, tarifa_evento, estado")
+      .eq("cliente_id", id)
+      .order("fecha_evento", { ascending: true });
+    setEventosAgenda(data ?? []);
+    setLoadingEventos(false);
+  };
 
   const cargarResultados = async () => {
     setCargandoResultados(true);
@@ -682,10 +713,7 @@ const ClienteDetalle = () => {
           {cliente.tipo_cliente === "evento" && cliente.nombre_salon && (
             <InfoRow icon={<Building2 className="h-4 w-4" />} label="Salón / Espacio" value={cliente.nombre_salon} />
           )}
-          {cliente.tipo_cliente === "evento" && cliente.tipo_evento && (
-            <InfoRow icon={<Calendar className="h-4 w-4" />} label="Tipo de evento" value={cliente.tipo_evento.charAt(0).toUpperCase() + cliente.tipo_evento.slice(1)} />
-          )}
-          {cliente.tipo_cliente === "evento" && cliente.capacidad && (
+{cliente.tipo_cliente === "evento" && cliente.capacidad && (
             <InfoRow icon={<User className="h-4 w-4" />} label="Capacidad" value={`${cliente.capacidad.toLocaleString("es-PY")} personas`} />
           )}
           {cliente.tarifa_mensual && (
@@ -1080,7 +1108,89 @@ const ClienteDetalle = () => {
           </section>
         )}
 
-        {esPropio && instancia !== "CENSO" && (
+        {/* Sección de Eventos (solo para clientes tipo "evento") */}
+        {cliente.tipo_cliente === "evento" && instancia !== "CENSO" && (
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-bold">
+                🎉 Eventos
+                <span className="ml-2 text-xs font-normal text-muted-foreground">({eventosAgenda.length})</span>
+              </h2>
+              {(esPropio || canManage) && (
+                <Link
+                  to={`/app/clientes/${id}/eventos/nuevo`}
+                  className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Nuevo evento
+                </Link>
+              )}
+            </div>
+
+            {loadingEventos ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : eventosAgenda.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/30 dark:bg-amber-950/10 p-8 text-center">
+                <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">Sin eventos registrados</p>
+                <p className="mt-1 text-xs text-muted-foreground">Creá el primer evento para este venue</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {eventosAgenda.map((ev) => {
+                  const estadoColors: Record<string, string> = {
+                    prospecto:  "bg-yellow-100 text-yellow-700",
+                    confirmado: "bg-blue-100 text-blue-700",
+                    cerrado:    "bg-green-100 text-green-700",
+                    cancelado:  "bg-red-100 text-red-700",
+                  };
+                  const tipoLabel: Record<string, string> = {
+                    casamiento: "Casamiento", quinceanos: "Quinceaños",
+                    corporativo: "Corporativo", social: "Social", musical: "Musical", otro: "Otro",
+                  };
+                  return (
+                    <Link
+                      key={ev.id}
+                      to={`/app/clientes/${id}/eventos/${ev.id}`}
+                      className="block rounded-2xl border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-4 shadow-card hover:border-amber-400 transition-smooth"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] font-bold tracking-widest text-amber-600 uppercase mb-0.5">
+                            EV-{String(ev.numero_evento).padStart(3, "0")}
+                          </p>
+                          <h3 className="truncate text-sm font-bold">{ev.nombre_evento ?? "Sin nombre"}</h3>
+                          <div className="mt-1 flex items-center gap-2 flex-wrap">
+                            {ev.tipo_evento && (
+                              <span className="text-xs text-muted-foreground">{tipoLabel[ev.tipo_evento] ?? ev.tipo_evento}</span>
+                            )}
+                            {ev.fecha_evento && (
+                              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Calendar className="h-3 w-3" />
+                                {new Date(ev.fecha_evento + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1.5">
+                          <span className={cn("rounded-full px-2.5 py-1 text-[10px] font-bold", estadoColors[ev.estado] ?? "bg-gray-100 text-gray-600")}>
+                            {ev.estado.charAt(0).toUpperCase() + ev.estado.slice(1)}
+                          </span>
+                          {ev.tarifa_evento && (
+                            <span className="text-xs font-bold text-primary">{formatPYG(ev.tarifa_evento)}</span>
+                          )}
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+
+        {esPropio && instancia !== "CENSO" && cliente.tipo_cliente !== "evento" && (
           <section>
             <Button
               onClick={() => setShowForm((v) => !v)}
@@ -1325,7 +1435,8 @@ const ClienteDetalle = () => {
           </section>
         )}
 
-        {/* Bitácora */}
+        {/* Bitácora — solo para locales permanentes */}
+        {cliente.tipo_cliente !== "evento" && (
         <section>
           <h2 className="mb-3 text-sm font-bold">
             Bitácora de actividades
@@ -1426,6 +1537,8 @@ const ClienteDetalle = () => {
             </div>
           )}
         </section>
+        )}
+
       </div>
     </>
   );

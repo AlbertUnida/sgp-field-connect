@@ -15,6 +15,8 @@ import Reportes from "./pages/Reportes";
 import Admin from "./pages/Admin";
 import NuevoCliente from "./pages/NuevoCliente";
 import EditarCliente from "./pages/EditarCliente";
+import NuevoEvento from "./pages/NuevoEvento";
+import EventoDetalle from "./pages/EventoDetalle";
 import Alertas from "./pages/Alertas";
 import Perfil from "./pages/Perfil";
 import Cobros from "./pages/Cobros";
@@ -72,6 +74,8 @@ const AppRoutes = () => (
       <Route path="clientes" element={<Clientes />} />
       <Route path="clientes/:id" element={<ClienteDetalle />} />
       <Route path="clientes/:id/editar" element={<EditarCliente />} />
+      <Route path="clientes/:id/eventos/nuevo" element={<NuevoEvento />} />
+      <Route path="clientes/:id/eventos/:eventoId" element={<EventoDetalle />} />
       <Route path="registrar" element={<Registrar />} />
       <Route path="reportes" element={<Reportes />} />
       <Route path="admin" element={<Admin />} />
