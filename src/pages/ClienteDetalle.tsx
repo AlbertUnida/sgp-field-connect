@@ -4,7 +4,7 @@ import {
   ArrowLeft, MapPin, Phone, Building2, FileText, Calendar,
   Plus, Car, PhoneCall, Mail, CheckCircle2, Clock, Loader2,
   ChevronDown, ChevronUp, User, UserCheck, Pencil, MessageCircle,
-  AlertTriangle, RotateCcw, Camera, AlertCircle
+  AlertTriangle, RotateCcw, Camera, AlertCircle, X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -138,6 +138,13 @@ const ClienteDetalle = () => {
   const [eventosAgenda, setEventosAgenda] = useState<EventoAgenda[]>([]);
   const [loadingEventos, setLoadingEventos] = useState(false);
 
+  // Formulario inline de nuevo evento
+  const eventoFormVacio = { nombre_evento: "", fecha_evento: "", tipo_evento: "", tarifa_evento: "", notas: "" };
+  const [showFormEvento, setShowFormEvento] = useState(false);
+  const [formEvento, setFormEvento] = useState(eventoFormVacio);
+  const [guardandoEvento, setGuardandoEvento] = useState(false);
+  const setEv = (k: string, v: string) => setFormEvento((p) => ({ ...p, [k]: v }));
+
   // Historial de instancias
   const [historial, setHistorial] = useState<HistorialInstancia[]>([]);
 
@@ -246,6 +253,39 @@ const ClienteDetalle = () => {
       .order("fecha_evento", { ascending: true });
     setEventosAgenda(data ?? []);
     setLoadingEventos(false);
+  };
+
+  const guardarEvento = async (abrirOtro: boolean) => {
+    if (!formEvento.nombre_evento.trim()) { toast.error("El nombre del evento es obligatorio"); return; }
+    if (!formEvento.fecha_evento) { toast.error("La fecha del evento es obligatoria"); return; }
+    if (!formEvento.tipo_evento) { toast.error("Seleccioná el tipo de evento"); return; }
+
+    setGuardandoEvento(true);
+    const { error } = await supabase.from("eventos_agenda").insert({
+      cliente_id: parseInt(id!),
+      nombre_evento: formEvento.nombre_evento.trim(),
+      fecha_evento: formEvento.fecha_evento,
+      tipo_evento: formEvento.tipo_evento,
+      tarifa_evento: formEvento.tarifa_evento ? parseInt(formEvento.tarifa_evento.replace(/\D/g, "")) : null,
+      notas: formEvento.notas.trim() || null,
+      estado: "prospecto",
+      ejecutivo_id: user!.id,
+      created_by: user!.id,
+    });
+
+    if (error) { toast.error("Error al guardar evento: " + error.message); setGuardandoEvento(false); return; }
+
+    toast.success("✅ Evento guardado");
+    await cargarEventos();
+    setGuardandoEvento(false);
+
+    if (abrirOtro) {
+      // Limpiar form y quedarse listo para el siguiente evento
+      setFormEvento(eventoFormVacio);
+    } else {
+      setFormEvento(eventoFormVacio);
+      setShowFormEvento(false);
+    }
   };
 
   const cargarResultados = async () => {
@@ -1111,30 +1151,129 @@ const ClienteDetalle = () => {
         {/* Sección de Eventos (solo para clientes tipo "evento") */}
         {cliente.tipo_cliente === "evento" && instancia !== "CENSO" && (
           <section className="space-y-3">
+            {/* Encabezado con contador y botón + */}
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold">
                 🎉 Eventos
                 <span className="ml-2 text-xs font-normal text-muted-foreground">({eventosAgenda.length})</span>
               </h2>
-              {(esPropio || canManage) && (
-                <Link
-                  to={`/app/clientes/${id}/eventos/nuevo`}
-                  className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground"
+              {(esPropio || canManage) && !showFormEvento && (
+                <button
+                  onClick={() => setShowFormEvento(true)}
+                  className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground active:scale-95 transition-smooth"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Nuevo evento
-                </Link>
+                </button>
               )}
             </div>
 
+            {/* Formulario inline de nuevo evento */}
+            {showFormEvento && (
+              <div className="rounded-2xl border-2 border-amber-400 bg-amber-50/60 dark:bg-amber-950/30 p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Nuevo evento</p>
+                  <button onClick={() => { setShowFormEvento(false); setFormEvento(eventoFormVacio); }} className="text-muted-foreground hover:text-foreground">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                {/* Nombre */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Nombre del evento <span className="text-destructive">*</span></Label>
+                  <Input
+                    placeholder="Casamiento García – López"
+                    value={formEvento.nombre_evento}
+                    onChange={(e) => setEv("nombre_evento", e.target.value)}
+                    className="h-11"
+                  />
+                </div>
+
+                {/* Fecha y Tipo en fila */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Fecha <span className="text-destructive">*</span></Label>
+                    <Input
+                      type="date"
+                      value={formEvento.fecha_evento}
+                      onChange={(e) => setEv("fecha_evento", e.target.value)}
+                      className="h-11"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Tipo <span className="text-destructive">*</span></Label>
+                    <select
+                      value={formEvento.tipo_evento}
+                      onChange={(e) => setEv("tipo_evento", e.target.value)}
+                      className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">Tipo...</option>
+                      <option value="casamiento">Casamiento</option>
+                      <option value="quinceanos">Quinceaños</option>
+                      <option value="corporativo">Corporativo</option>
+                      <option value="social">Social / Privado</option>
+                      <option value="musical">Musical / Show</option>
+                      <option value="otro">Otro</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Tarifa */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Tarifa del evento (Gs.)</Label>
+                  <Input
+                    type="number"
+                    placeholder="500000"
+                    value={formEvento.tarifa_evento}
+                    onChange={(e) => setEv("tarifa_evento", e.target.value)}
+                    className="h-11"
+                  />
+                </div>
+
+                {/* Notas */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Notas</Label>
+                  <Textarea
+                    placeholder="Observaciones..."
+                    value={formEvento.notas}
+                    onChange={(e) => setEv("notas", e.target.value)}
+                    rows={2}
+                    className="resize-none text-sm"
+                  />
+                </div>
+
+                {/* Botones de acción */}
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => guardarEvento(true)}
+                    disabled={guardandoEvento}
+                    variant="outline"
+                    className="flex-1 gap-1.5 border-amber-400 text-amber-700 hover:bg-amber-100 dark:hover:bg-amber-900/30 text-xs h-10"
+                  >
+                    {guardandoEvento ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                    Guardar y agregar otro
+                  </Button>
+                  <Button
+                    onClick={() => guardarEvento(false)}
+                    disabled={guardandoEvento}
+                    className="flex-1 gap-1.5 text-xs h-10"
+                  >
+                    {guardandoEvento ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    Guardar y cerrar
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Lista de eventos */}
             {loadingEventos ? (
               <div className="flex justify-center py-4">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               </div>
-            ) : eventosAgenda.length === 0 ? (
+            ) : eventosAgenda.length === 0 && !showFormEvento ? (
               <div className="rounded-2xl border border-dashed border-amber-300 bg-amber-50/30 dark:bg-amber-950/10 p-8 text-center">
                 <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">Sin eventos registrados</p>
-                <p className="mt-1 text-xs text-muted-foreground">Creá el primer evento para este venue</p>
+                <p className="mt-1 text-xs text-muted-foreground">Tocá "Nuevo evento" para empezar la carga</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -1153,7 +1292,7 @@ const ClienteDetalle = () => {
                     <Link
                       key={ev.id}
                       to={`/app/clientes/${id}/eventos/${ev.id}`}
-                      className="block rounded-2xl border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-4 shadow-card hover:border-amber-400 transition-smooth"
+                      className="block rounded-2xl border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-4 shadow-card hover:border-amber-400 transition-smooth active:scale-[0.99]"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 flex-1">
