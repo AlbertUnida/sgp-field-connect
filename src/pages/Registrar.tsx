@@ -32,7 +32,6 @@ const TIPOS = [
   { key: "llamada",  label: "Llamada",   icon: Phone },
   { key: "email",    label: "Email",     icon: Mail },
   { key: "whatsapp", label: "WhatsApp",  icon: MessageCircle },
-  { key: "otro",     label: "Otro",      icon: FileText },
 ];
 
 const Registrar = () => {
@@ -61,17 +60,13 @@ const Registrar = () => {
   const [proxima, setProxima] = useState("");
   const [guardando, setGuardando] = useState(false);
 
-  // Campos especiales — Medición de Incógnito
-  const [medAncho, setMedAncho] = useState("");
-  const [medAlto, setMedAlto] = useState("");
-  const [medFondo, setMedFondo] = useState("");
-  const [medMaterial, setMedMaterial] = useState("");
-  const [medObservaciones, setMedObservaciones] = useState("");
-
   // Campos especiales — Nota Info & Prop. Com.
   const [receptorNombre, setReceptorNombre] = useState("");
   const [receptorApellido, setReceptorApellido] = useState("");
   const [fechaEntrega, setFechaEntrega] = useState("");
+
+  // IDs de resultado ya completados para el cliente seleccionado (para filtro nota_reclamo)
+  const [resultadosCompletadosCliente, setResultadosCompletadosCliente] = useState<Set<string>>(new Set());
 
   // GPS — captura automática, sin acción manual del ejecutivo
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
@@ -86,6 +81,18 @@ const Registrar = () => {
   // Resultado seleccionado (objeto completo para saber tipo_formulario)
   const resultadoSeleccionado = tiposResultado.find((t) => t.id === resultadoId) ?? null;
   const tipoFormulario = resultadoSeleccionado?.tipo_formulario ?? null;
+
+  // Filtrado secuencial de nota_reclamo: solo muestra el próximo pendiente
+  const tiposResultadoFiltrados = (() => {
+    const notaReclamo = tiposResultado
+      .filter((t) => t.tipo_formulario === "nota_reclamo")
+      .sort((a, b) => a.orden - b.orden);
+    const proxPendiente = notaReclamo.find((t) => !resultadosCompletadosCliente.has(t.id));
+    return [
+      ...tiposResultado.filter((t) => t.tipo_formulario !== "nota_reclamo"),
+      ...(proxPendiente ? [proxPendiente] : []),
+    ];
+  })();
 
   // Promesa de GPS reutilizable
   const capturarGPSPromise = (): Promise<{ lat: number; lng: number } | null> => {
@@ -161,26 +168,41 @@ const Registrar = () => {
     );
   });
 
-  const seleccionarCliente = (c: ClienteOpcion) => {
+  const seleccionarCliente = async (c: ClienteOpcion) => {
     setClienteSeleccionado(c);
     setBusqueda(c.nombre_comercial);
     setMostrarDropdown(false);
     inputRef.current?.blur();
+    // Limpiar resultado si el filtro ya no lo incluye
+    setResultadoId("");
+    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
+    // Fetch gestiones para filtro secuencial de nota_reclamo
+    const { data } = await supabase
+      .from("gestiones")
+      .select("resultado_id")
+      .eq("cliente_id", c.id)
+      .not("resultado_id", "is", null);
+    const ids = new Set<string>((data ?? []).map((g: any) => g.resultado_id).filter(Boolean));
+    setResultadosCompletadosCliente(ids);
   };
 
   const limpiarCliente = () => {
     setClienteSeleccionado(null);
     setBusqueda("");
     setMostrarDropdown(false);
+    setResultadosCompletadosCliente(new Set());
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
   // Limpiar campos especiales al cambiar resultado
   const handleResultadoChange = (id: string) => {
     setResultadoId(id);
-    setMedAncho(""); setMedAlto(""); setMedFondo("");
-    setMedMaterial(""); setMedObservaciones("");
     setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
+    // Auto-completar fecha de hoy para nota_comercial y nota_reclamo
+    const tipo = tiposResultado.find((t) => t.id === id);
+    if (tipo?.tipo_formulario === "nota_comercial" || tipo?.tipo_formulario === "nota_reclamo") {
+      setFechaEntrega(new Date().toISOString().split("T")[0]);
+    }
   };
 
   // Cerrar dropdown al clic afuera
@@ -274,7 +296,7 @@ const Registrar = () => {
     if (!resultadoId) { toast.error("Seleccioná el resultado de la gestión"); return; }
 
     // Validaciones de formularios especiales
-    if (tipoFormulario === "nota_comercial" && !receptorNombre.trim()) {
+    if ((tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && !receptorNombre.trim()) {
       toast.error("Ingresá el nombre de quien recibió la nota");
       return;
     }
@@ -316,22 +338,14 @@ const Registrar = () => {
 
     // Construir datos_extra según tipo_formulario
     let datosExtra: Record<string, string> | null = null;
-    if (tipoFormulario === "medicion_incognito") {
-      datosExtra = {
-        ancho: medAncho,
-        alto: medAlto,
-        fondo: medFondo,
-        material: medMaterial,
-        observaciones: medObservaciones,
-      };
-    } else if (tipoFormulario === "nota_comercial") {
+    if (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") {
       datosExtra = {
         receptor_nombre: receptorNombre.trim(),
         receptor_apellido: receptorApellido.trim(),
         fecha_entrega: fechaEntrega,
       };
     }
-    // sin_medios no tiene datos extra (solo la alerta de 30 días)
+    // sin_medios no tiene datos extra
 
     const { error } = await supabase.from("gestiones").insert({
       cliente_id: parseInt(clienteSeleccionado.id),
@@ -379,9 +393,8 @@ const Registrar = () => {
     setResultadoId("");
     setNotas("");
     setProxima("");
-    setMedAncho(""); setMedAlto(""); setMedFondo("");
-    setMedMaterial(""); setMedObservaciones("");
     setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
+    setResultadosCompletadosCliente(new Set());
     quitarFoto();
     setGuardando(false);
   };
@@ -526,67 +539,12 @@ const Registrar = () => {
                 className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
                 <option value="">¿Cómo fue la gestión?</option>
-                {tiposResultado.map((r) => (
+                {tiposResultadoFiltrados.map((r) => (
                   <option key={r.id} value={r.id}>{r.nombre}</option>
                 ))}
               </select>
             )}
           </div>
-
-          {/* ── Formulario especial: Medición de Incógnito ── */}
-          {tipoFormulario === "medicion_incognito" && (
-            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-              <p className="text-xs font-bold uppercase tracking-wider text-primary">📐 Medición de Incógnito</p>
-              <div className="grid grid-cols-3 gap-2">
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Ancho</Label>
-                  <Input
-                    placeholder="cm"
-                    value={medAncho}
-                    onChange={(e) => setMedAncho(e.target.value)}
-                    className="h-10 text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Alto</Label>
-                  <Input
-                    placeholder="cm"
-                    value={medAlto}
-                    onChange={(e) => setMedAlto(e.target.value)}
-                    className="h-10 text-sm"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Fondo</Label>
-                  <Input
-                    placeholder="cm"
-                    value={medFondo}
-                    onChange={(e) => setMedFondo(e.target.value)}
-                    className="h-10 text-sm"
-                  />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[10px] font-bold uppercase text-muted-foreground">Material / Tipo de soporte</Label>
-                <Input
-                  placeholder="Ej: cartel luminoso, banner, pantalla LED..."
-                  value={medMaterial}
-                  onChange={(e) => setMedMaterial(e.target.value)}
-                  className="h-10 text-sm"
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-[10px] font-bold uppercase text-muted-foreground">Observaciones</Label>
-                <Textarea
-                  placeholder="Cantidad de medios, ubicación, observaciones adicionales..."
-                  value={medObservaciones}
-                  onChange={(e) => setMedObservaciones(e.target.value)}
-                  rows={2}
-                  className="resize-none text-sm"
-                />
-              </div>
-            </div>
-          )}
 
           {/* ── Formulario especial: Sin Medios ── */}
           {tipoFormulario === "sin_medios" && (
@@ -604,15 +562,17 @@ const Registrar = () => {
             </div>
           )}
 
-          {/* ── Formulario especial: Nota Info & Prop. Com. ── */}
-          {tipoFormulario === "nota_comercial" && (
+          {/* ── Formulario especial: Nota (nota_comercial y nota_reclamo) ── */}
+          {(tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && (
             <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-              <p className="text-xs font-bold uppercase tracking-wider text-primary">📄 Nota Info & Prop. Com.</p>
-              <p className="text-[11px] text-muted-foreground">Datos de quien recibió la nota o propuesta comercial.</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-primary">
+                📄 {resultadoSeleccionado?.nombre ?? "Nota"}
+              </p>
+              <p className="text-[11px] text-muted-foreground">Datos de quien recibió la nota.</p>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label className="text-[10px] font-bold uppercase text-muted-foreground">
-                    Nombre <span className="text-destructive">*</span>
+                    Nombre receptor <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     placeholder="Nombre"
