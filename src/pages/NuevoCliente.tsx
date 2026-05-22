@@ -40,6 +40,10 @@ const NuevoCliente = () => {
     direccion: "",
     calle_secundaria: "",
     monto_licencia: "",
+    // Campos específicos de Evento
+    nombre_salon: "",
+    tipo_evento: "",
+    capacidad: "",
   });
 
   useEffect(() => {
@@ -91,6 +95,10 @@ const NuevoCliente = () => {
       rubro_id: form.rubro_id,
       sub_rubro_id: form.sub_rubro_id || null,
       tipo_cliente: form.tipo_cliente,
+      // Campos de Evento (null si es local)
+      nombre_salon: form.tipo_cliente === "evento" ? form.nombre_salon.trim() || null : null,
+      tipo_evento: form.tipo_cliente === "evento" ? form.tipo_evento.trim() || null : null,
+      capacidad: form.tipo_cliente === "evento" && form.capacidad ? parseInt(form.capacidad.replace(/\D/g, "")) || null : null,
       instancia: "CENSO",
       estado: "activo",
       activo: true,
@@ -205,6 +213,31 @@ const NuevoCliente = () => {
           <Campo label="RUC" placeholder="80012345-6" value={form.ruc} onChange={(v) => set("ruc", v)} />
           <Campo label="Teléfono" placeholder="+595 981 123-456" value={form.telefono} onChange={(v) => set("telefono", v)} type="tel" />
         </div>
+
+        {/* Campos específicos de Evento */}
+        {form.tipo_cliente === "evento" && (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50/50 dark:bg-amber-950/20 p-4 shadow-card space-y-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Datos del evento</p>
+            <Campo label="Nombre del salón / espacio" placeholder="Salón Los Pinos" value={form.nombre_salon} onChange={(v) => set("nombre_salon", v)} />
+            <div className="space-y-1.5">
+              <Label>Tipo de evento</Label>
+              <select
+                value={form.tipo_evento}
+                onChange={(e) => set("tipo_evento", e.target.value)}
+                className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
+              >
+                <option value="">Seleccioná un tipo...</option>
+                <option value="casamiento">Casamiento</option>
+                <option value="quinceanos">Quinceaños</option>
+                <option value="corporativo">Corporativo</option>
+                <option value="social">Social / Privado</option>
+                <option value="musical">Musical / Show</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+            <Campo label="Capacidad / Aforo (personas)" placeholder="300" value={form.capacidad} onChange={(v) => set("capacidad", v)} type="number" />
+          </div>
+        )}
 
         {/* Dirección */}
         <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">

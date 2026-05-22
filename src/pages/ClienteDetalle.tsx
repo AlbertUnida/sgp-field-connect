@@ -38,6 +38,9 @@ interface Cliente {
   activo: boolean;
   notas: string | null;
   tipo_cliente: string | null;
+  nombre_salon: string | null;
+  tipo_evento: string | null;
+  capacidad: number | null;
   categoria: { nombre: string } | null;
   rubro_rel: { nombre: string } | null;
   sub_rubro_id: string | null;
@@ -49,6 +52,7 @@ interface TipoResultado {
   id: string;
   nombre: string;
   tipo_formulario: "sin_medios" | "nota_comercial" | "nota_reclamo" | null;
+  tipo_cartera: string;
   activo: boolean;
   orden: number;
 }
@@ -182,15 +186,20 @@ const ClienteDetalle = () => {
   const resultadoSeleccionado = tiposResultado.find((t) => t.id === resultadoId) ?? null;
   const tipoFormulario = resultadoSeleccionado?.tipo_formulario ?? null;
 
-  // Filtrado secuencial de nota_reclamo: solo muestra el próximo pendiente
+  // Filtrado por cartera + filtrado secuencial de nota_reclamo
   const tiposResultadoFiltrados = (() => {
+    const tipoCarteraCliente = cliente?.tipo_cliente ?? "local";
+    // Filtrar por cartera: mostrar solo los que aplican a este tipo de cliente
+    const porCartera = tiposResultado.filter(
+      (t) => t.tipo_cartera === "ambos" || t.tipo_cartera === tipoCarteraCliente
+    );
     const completedIds = new Set<string>(gestiones.map((g) => g.resultado_id).filter(Boolean) as string[]);
-    const notaReclamo = tiposResultado
+    const notaReclamo = porCartera
       .filter((t) => t.tipo_formulario === "nota_reclamo")
       .sort((a, b) => a.orden - b.orden);
     const proxPendiente = notaReclamo.find((t) => !completedIds.has(t.id));
     return [
-      ...tiposResultado.filter((t) => t.tipo_formulario !== "nota_reclamo"),
+      ...porCartera.filter((t) => t.tipo_formulario !== "nota_reclamo"),
       ...(proxPendiente ? [proxPendiente] : []),
     ];
   })();
@@ -212,7 +221,7 @@ const ClienteDetalle = () => {
     setCargandoResultados(true);
     const { data } = await supabase
       .from("tipos_resultado")
-      .select("id, nombre, tipo_formulario, activo, orden")
+      .select("id, nombre, tipo_formulario, tipo_cartera, activo, orden")
       .eq("activo", true)
       .order("orden", { ascending: true })
       .order("nombre", { ascending: true });
@@ -627,8 +636,13 @@ const ClienteDetalle = () => {
               {cliente.activo ? "Activo" : "Inactivo"}
             </span>
             {cliente.tipo_cliente && (
-              <span className="rounded-full bg-white/15 px-3 py-1 text-[11px] font-bold uppercase text-primary-foreground/80">
-                {cliente.tipo_cliente}
+              <span className={cn(
+                "rounded-full px-3 py-1 text-[11px] font-bold uppercase",
+                cliente.tipo_cliente === "evento"
+                  ? "bg-amber-400/30 text-amber-100"
+                  : "bg-white/15 text-primary-foreground/80"
+              )}>
+                {cliente.tipo_cliente === "evento" ? "🎉 Evento" : "🏪 Local"}
               </span>
             )}
           </div>
@@ -664,6 +678,16 @@ const ClienteDetalle = () => {
             ].filter(Boolean).join(", ")} />
           )}
           {cliente.ruc && <InfoRow icon={<FileText className="h-4 w-4" />} label="RUC" value={cliente.ruc} />}
+          {/* Campos específicos de Evento */}
+          {cliente.tipo_cliente === "evento" && cliente.nombre_salon && (
+            <InfoRow icon={<Building2 className="h-4 w-4" />} label="Salón / Espacio" value={cliente.nombre_salon} />
+          )}
+          {cliente.tipo_cliente === "evento" && cliente.tipo_evento && (
+            <InfoRow icon={<Calendar className="h-4 w-4" />} label="Tipo de evento" value={cliente.tipo_evento.charAt(0).toUpperCase() + cliente.tipo_evento.slice(1)} />
+          )}
+          {cliente.tipo_cliente === "evento" && cliente.capacidad && (
+            <InfoRow icon={<User className="h-4 w-4" />} label="Capacidad" value={`${cliente.capacidad.toLocaleString("es-PY")} personas`} />
+          )}
           {cliente.tarifa_mensual && (
             <InfoRow icon={<Building2 className="h-4 w-4" />} label="Tarifa mensual" value={formatPYG(cliente.tarifa_mensual)} valueClass="font-bold text-primary" />
           )}

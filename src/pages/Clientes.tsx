@@ -25,6 +25,7 @@ interface ClienteReal {
   ejecutivo_id: string | null;
   creado_por: string | null;
   creado_por_nombre: string | null;
+  tipo_cliente: string | null;
 }
 
 const Clientes = () => {
@@ -36,6 +37,7 @@ const Clientes = () => {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<string>("all");
+  const [tipFilter, setTipFilter] = useState<string>("all"); // "all" | "local" | "evento"
   const [censoEjFilter, setCensoEjFilter] = useState<string>("");
 
   // Lista de ejecutivos que tienen clientes en CENSO (para sub-filtro)
@@ -59,7 +61,7 @@ const Clientes = () => {
 
     let query = supabase
       .from("clientes")
-      .select("id, numero_cliente, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion, creado_por, ejecutivo_id, ejecutivo:ejecutivo_id(nombre, apellido), creador:creado_por(nombre, apellido)")
+      .select("id, numero_cliente, nombre_comercial, rubro, direccion, ciudad, telefono, instancia, tarifa_mensual, proxima_accion, ultima_gestion, creado_por, ejecutivo_id, tipo_cliente, ejecutivo:ejecutivo_id(nombre, apellido), creador:creado_por(nombre, apellido)")
       .eq("activo", true)
       .order("nombre_comercial");
 
@@ -77,6 +79,7 @@ const Clientes = () => {
       numero_cliente: c.numero_cliente ?? null,
       ejecutivo_id: c.ejecutivo_id ?? null,
       creado_por: c.creado_por ?? null,
+      tipo_cliente: c.tipo_cliente ?? null,
       ejecutivo_nombre: c.ejecutivo
         ? `${c.ejecutivo.nombre ?? ""} ${c.ejecutivo.apellido ?? ""}`.trim()
         : null,
@@ -119,9 +122,12 @@ const Clientes = () => {
         matchF = (c.instancia ?? "CENSO") === filter && c.ejecutivo_id === user?.id;
       }
 
-      return matchQ && matchF;
+      // Filtro por tipo de cliente (Local / Evento)
+      const matchTip = tipFilter === "all" || (c.tipo_cliente ?? "local") === tipFilter;
+
+      return matchQ && matchF && matchTip;
     });
-  }, [clientes, q, filter, censoEjFilter, user, canManage]);
+  }, [clientes, q, filter, tipFilter, censoEjFilter, user, canManage]);
 
   return (
     <>
@@ -161,6 +167,16 @@ const Clientes = () => {
                 {f.label}
               </FilterChip>
             ))}
+          </div>
+        </div>
+
+        {/* Filtro por tipo de cliente */}
+        <div className="-mx-4 mt-2 overflow-x-auto px-4 pb-1">
+          <div className="flex gap-2 items-center">
+            <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-muted-foreground mr-1">Tipo:</span>
+            <FilterChip active={tipFilter === "all"} onClick={() => setTipFilter("all")}>Todos</FilterChip>
+            <FilterChip active={tipFilter === "local"} onClick={() => setTipFilter("local")} color="#3b82f6">🏪 Local</FilterChip>
+            <FilterChip active={tipFilter === "evento"} onClick={() => setTipFilter("evento")} color="#f59e0b">🎉 Evento</FilterChip>
           </div>
         </div>
 
@@ -219,6 +235,16 @@ const Clientes = () => {
                     )}
                     <h3 className="truncate text-sm font-bold">{c.nombre_comercial}</h3>
                     {c.rubro && <p className="mt-0.5 text-xs text-muted-foreground">{c.rubro}</p>}
+                    {c.tipo_cliente && (
+                      <span className={cn(
+                        "mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold",
+                        c.tipo_cliente === "evento"
+                          ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                          : "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
+                      )}>
+                        {c.tipo_cliente === "evento" ? "🎉 Evento" : "🏪 Local"}
+                      </span>
+                    )}
                     {/* Creador visible en CENSO para canManage */}
                     {canManage && c.instancia === "CENSO" && c.creado_por_nombre && (
                       <p className="mt-0.5 flex items-center gap-1 text-[11px] font-semibold text-amber-700 dark:text-amber-400">

@@ -17,12 +17,14 @@ interface ClienteOpcion {
   nombre_comercial: string;
   ciudad: string | null;
   instancia: string | null;
+  tipo_cliente: string | null;
 }
 
 interface TipoResultado {
   id: string;
   nombre: string;
   tipo_formulario: string | null;
+  tipo_cartera: string;
   activo: boolean;
   orden: number;
 }
@@ -82,14 +84,19 @@ const Registrar = () => {
   const resultadoSeleccionado = tiposResultado.find((t) => t.id === resultadoId) ?? null;
   const tipoFormulario = resultadoSeleccionado?.tipo_formulario ?? null;
 
-  // Filtrado secuencial de nota_reclamo: solo muestra el próximo pendiente
+  // Filtrado secuencial de nota_reclamo + filtro por cartera del cliente seleccionado
   const tiposResultadoFiltrados = (() => {
-    const notaReclamo = tiposResultado
+    const tipoCarteraCliente = clienteSeleccionado?.tipo_cliente ?? "local";
+    // Filtrar por cartera: mostrar solo los que aplican a este tipo de cliente
+    const porCartera = tiposResultado.filter(
+      (t) => t.tipo_cartera === "ambos" || t.tipo_cartera === tipoCarteraCliente
+    );
+    const notaReclamo = porCartera
       .filter((t) => t.tipo_formulario === "nota_reclamo")
       .sort((a, b) => a.orden - b.orden);
     const proxPendiente = notaReclamo.find((t) => !resultadosCompletadosCliente.has(t.id));
     return [
-      ...tiposResultado.filter((t) => t.tipo_formulario !== "nota_reclamo"),
+      ...porCartera.filter((t) => t.tipo_formulario !== "nota_reclamo"),
       ...(proxPendiente ? [proxPendiente] : []),
     ];
   })();
@@ -130,7 +137,7 @@ const Registrar = () => {
     setCargandoClientes(true);
     let query = supabase
       .from("clientes")
-      .select("id, numero_cliente, nombre_comercial, ciudad, instancia")
+      .select("id, numero_cliente, nombre_comercial, ciudad, instancia, tipo_cliente")
       .eq("activo", true)
       .order("nombre_comercial");
 
@@ -147,7 +154,7 @@ const Registrar = () => {
     setCargandoResultados(true);
     const { data } = await supabase
       .from("tipos_resultado")
-      .select("id, nombre, tipo_formulario, activo, orden")
+      .select("id, nombre, tipo_formulario, tipo_cartera, activo, orden")
       .eq("activo", true)
       .order("orden")
       .order("nombre");
