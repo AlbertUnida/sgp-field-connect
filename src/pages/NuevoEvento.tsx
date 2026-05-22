@@ -55,7 +55,7 @@ const NuevoEvento = () => {
     setGuardando(true);
 
     const { error } = await supabase.from("eventos_agenda").insert({
-      cliente_id: clienteId,
+      cliente_id: parseInt(clienteId!),
       nombre_evento: form.nombre_evento.trim(),
       fecha_evento: form.fecha_evento,
       tipo_evento: form.tipo_evento,

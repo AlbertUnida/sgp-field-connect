@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 interface Evento {
   id: string;
   numero_evento: number;
-  cliente_id: string;
+  cliente_id: number;
   nombre_evento: string | null;
   fecha_evento: string | null;
   tipo_evento: string | null;

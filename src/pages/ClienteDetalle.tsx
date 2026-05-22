@@ -242,7 +242,7 @@ const ClienteDetalle = () => {
     const { data } = await supabase
       .from("eventos_agenda")
       .select("id, numero_evento, nombre_evento, fecha_evento, tipo_evento, tarifa_evento, estado")
-      .eq("cliente_id", id)
+      .eq("cliente_id", parseInt(id!))
       .order("fecha_evento", { ascending: true });
     setEventosAgenda(data ?? []);
     setLoadingEventos(false);
