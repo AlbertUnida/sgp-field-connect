@@ -1413,6 +1413,7 @@ const ClienteDetalle = () => {
                 <p className="mt-1 text-xs text-muted-foreground">Tocá "Nuevo evento" para empezar la carga</p>
               </div>
             ) : (
+              <>
               <div className="space-y-2">
                 {eventosAgenda.map((ev) => {
                   const estadoColors: Record<string, string> = {
@@ -1640,6 +1641,7 @@ const ClienteDetalle = () => {
                   </Button>
                 </div>
               )}
+              </>
             )}
           </section>
         )}
