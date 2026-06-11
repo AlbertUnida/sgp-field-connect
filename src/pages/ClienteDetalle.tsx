@@ -135,6 +135,7 @@ const ClienteDetalle = () => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [guardando, setGuardando] = useState(false);
+  const [showDatosLocal, setShowDatosLocal] = useState(true);
   const [showRelevamiento, setShowRelevamiento] = useState(false);
 
   // Eventos agenda (para clientes tipo "evento")
@@ -179,6 +180,7 @@ const ClienteDetalle = () => {
   const [cobroEv, setCobroEv] = useState({
     monto: "",
     metodo_pago: "efectivo",
+    modalidad: "pago_unico",
     fecha_cobro: hoy,
     razon_social_factura: "",
     ruc_factura: "",
@@ -534,6 +536,7 @@ const ClienteDetalle = () => {
     setCobroEv({
       monto: totalTarifas > 0 ? String(totalTarifas) : "",
       metodo_pago: "efectivo",
+      modalidad: "pago_unico",
       fecha_cobro: hoy,
       razon_social_factura: cliente?.razon_social ?? "",
       ruc_factura: cliente?.ruc ?? "",
@@ -562,7 +565,7 @@ const ClienteDetalle = () => {
       registrado_por: user!.id,
       monto: montoNum,
       metodo_pago: cobroEv.metodo_pago,
-      modalidad: "evento",
+      modalidad: cobroEv.modalidad,
       fecha_cobro: cobroEv.fecha_cobro,
       razon_social_factura: cobroEv.razon_social_factura || null,
       ruc_factura: cobroEv.ruc_factura || null,
@@ -600,7 +603,7 @@ const ClienteDetalle = () => {
     setEventosSeleccionados(new Set());
     setShowCobroEventos(false);
     setModoSeleccion(false);
-    setCobroEv({ monto: "", metodo_pago: "efectivo", fecha_cobro: hoy, razon_social_factura: "", ruc_factura: "", notas: "" });
+    setCobroEv({ monto: "", metodo_pago: "efectivo", modalidad: "pago_unico", fecha_cobro: hoy, razon_social_factura: "", ruc_factura: "", notas: "" });
     await Promise.all([cargarCliente(), cargarCobros(), cargarHistorial()]);
     setGuardandoCobroEv(false);
   };
@@ -843,7 +846,18 @@ const ClienteDetalle = () => {
 
         {/* Datos del cliente */}
         <section className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-3">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Datos del local</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Datos del local</h2>
+            <button
+              onClick={() => setShowDatosLocal((v) => !v)}
+              className="flex h-7 w-7 items-center justify-center rounded-full hover:bg-muted transition-colors"
+            >
+              {showDatosLocal
+                ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+                : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+            </button>
+          </div>
+          {showDatosLocal && <>
           {cliente.telefono && <InfoRow icon={<Phone className="h-4 w-4" />} label="Teléfono" value={cliente.telefono} />}
           {cliente.email_cliente && <InfoRow icon={<Mail className="h-4 w-4" />} label="Email" value={cliente.email_cliente} />}
           {(cliente.direccion || cliente.ciudad) && (
@@ -909,6 +923,7 @@ const ClienteDetalle = () => {
               value={new Date(cliente.created_at).toLocaleDateString("es-PY", { day: "2-digit", month: "long", year: "numeric" })}
             />
           )}
+          </>}
         </section>
 
         {/* Asignación de ejecutivo — admin y supervisor, cuando el cliente no tiene ejecutivo asignado */}
@@ -1557,6 +1572,22 @@ const ClienteDetalle = () => {
                     />
                   </div>
 
+                  {/* Modalidad */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Modalidad</Label>
+                    <select
+                      value={cobroEv.modalidad}
+                      onChange={(e) => setCobEv("modalidad", e.target.value)}
+                      className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="pago_unico">Pago único</option>
+                      <option value="mensual">Mensual</option>
+                      <option value="trimestral">Trimestral</option>
+                      <option value="semestral">Semestral</option>
+                      <option value="anual">Anual</option>
+                    </select>
+                  </div>
+
                   {/* Método + Fecha */}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
@@ -1764,6 +1795,8 @@ const ClienteDetalle = () => {
                   trimestral: "Trimestral",
                   semestral: "Semestral",
                   anual: "Anual",
+                  pago_unico: "Pago único",
+                  evento: "Evento",
                 };
                 return (
                   <div key={c.id} className="rounded-2xl border border-border bg-card p-4 shadow-card">
