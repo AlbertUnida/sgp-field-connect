@@ -79,6 +79,9 @@ interface CobroCliente {
   periodo_hasta: string | null;
   notas: string | null;
   registrado_por_nombre: string | null;
+  razon_social_factura?: string | null;
+  ruc_factura?: string | null;
+  eventos_ids?: string[] | null;
 }
 
 interface HistorialInstancia {
@@ -167,6 +170,21 @@ const ClienteDetalle = () => {
     notas: "",
   });
   const setCob = (key: string, val: string) => setCobro((p) => ({ ...p, [key]: val }));
+
+  // Cobro por lotes (eventos)
+  const [modoSeleccion, setModoSeleccion] = useState(false);
+  const [eventosSeleccionados, setEventosSeleccionados] = useState<Set<string>>(new Set());
+  const [showCobroEventos, setShowCobroEventos] = useState(false);
+  const [guardandoCobroEv, setGuardandoCobroEv] = useState(false);
+  const [cobroEv, setCobroEv] = useState({
+    monto: "",
+    metodo_pago: "efectivo",
+    fecha_cobro: hoy,
+    razon_social_factura: "",
+    ruc_factura: "",
+    notas: "",
+  });
+  const setCobEv = (k: string, v: string) => setCobroEv((p) => ({ ...p, [k]: v }));
 
   // Renovar licencia (COBRANZAS → COMERCIAL)
   const [renovando, setRenovando] = useState(false);
@@ -370,6 +388,7 @@ const ClienteDetalle = () => {
       .select(`
         id, monto, metodo_pago, modalidad, fecha_cobro,
         periodo_desde, periodo_hasta, notas,
+        razon_social_factura, ruc_factura, eventos_ids,
         registrado_por:registrado_por(nombre, apellido)
       `)
       .eq("cliente_id", id)
@@ -498,6 +517,94 @@ const ClienteDetalle = () => {
     await cargarHistorial();
     setGuardandoCobro(false);
   };
+
+  // ── Cobro por lotes (eventos) ──────────────────────────────────────────────
+  const toggleEventoSeleccionado = (evId: string) => {
+    setEventosSeleccionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(evId)) next.delete(evId);
+      else next.add(evId);
+      return next;
+    });
+  };
+
+  const abrirCobroEventos = () => {
+    const evsSel = eventosAgenda.filter((ev) => eventosSeleccionados.has(ev.id));
+    const totalTarifas = evsSel.reduce((s, ev) => s + (ev.tarifa_evento ?? 0), 0);
+    setCobroEv({
+      monto: totalTarifas > 0 ? String(totalTarifas) : "",
+      metodo_pago: "efectivo",
+      fecha_cobro: hoy,
+      razon_social_factura: cliente?.razon_social ?? "",
+      ruc_factura: cliente?.ruc ?? "",
+      notas: "",
+    });
+    setShowCobroEventos(true);
+  };
+
+  const registrarCobroEventos = async () => {
+    if (eventosSeleccionados.size === 0) { toast.error("Seleccioná al menos un evento"); return; }
+    if (!cobroEv.monto) { toast.error("Ingresá el monto cobrado"); return; }
+    if (!cobroEv.fecha_cobro) { toast.error("Ingresá la fecha del cobro"); return; }
+
+    setGuardandoCobroEv(true);
+
+    const montoNum = parseFloat(cobroEv.monto.replace(/\D/g, ""));
+    const eventosSelArr = Array.from(eventosSeleccionados);
+    const eventosNombres = eventosAgenda
+      .filter((ev) => eventosSeleccionados.has(ev.id))
+      .map((ev) => `EV-${String(ev.numero_evento).padStart(3, "0")}`)
+      .join(", ");
+
+    const { error } = await supabase.from("cobros").insert({
+      cliente_id: parseInt(id!),
+      ejecutivo_id: cliente!.ejecutivo_id,
+      registrado_por: user!.id,
+      monto: montoNum,
+      metodo_pago: cobroEv.metodo_pago,
+      modalidad: "evento",
+      fecha_cobro: cobroEv.fecha_cobro,
+      razon_social_factura: cobroEv.razon_social_factura || null,
+      ruc_factura: cobroEv.ruc_factura || null,
+      eventos_ids: eventosSelArr,
+      notas: cobroEv.notas || null,
+    });
+
+    if (error) { toast.error("Error al registrar cobro: " + error.message); setGuardandoCobroEv(false); return; }
+
+    // Calcular fecha_vencimiento
+    const { data: rubroInfo } = await supabase
+      .from("clientes")
+      .select("rubro_rel:rubro_id(dias_vigencia)")
+      .eq("id", id)
+      .single();
+    const diasVigencia = (rubroInfo?.rubro_rel as any)?.dias_vigencia ?? 30;
+    const fechaBase = new Date(cobroEv.fecha_cobro);
+    fechaBase.setDate(fechaBase.getDate() + diasVigencia);
+    const fechaVencimiento = fechaBase.toISOString().split("T")[0];
+
+    const instanciaAnterior = cliente!.instancia ?? "COMERCIAL";
+    await supabase.from("clientes")
+      .update({ instancia: "COBRANZAS", fecha_vencimiento: fechaVencimiento })
+      .eq("id", id);
+
+    await supabase.from("historial_instancias").insert({
+      cliente_id: parseInt(id!),
+      instancia_anterior: instanciaAnterior,
+      instancia_nueva: "COBRANZAS",
+      ejecutivo_id: user!.id,
+      notas: `Cobro de eventos: ${eventosNombres}`,
+    });
+
+    toast.success(`✅ Cobro de ${eventosSeleccionados.size} evento(s) registrado — cliente pasa a COBRANZAS`);
+    setEventosSeleccionados(new Set());
+    setShowCobroEventos(false);
+    setModoSeleccion(false);
+    setCobroEv({ monto: "", metodo_pago: "efectivo", fecha_cobro: hoy, razon_social_factura: "", ruc_factura: "", notas: "" });
+    await Promise.all([cargarCliente(), cargarCobros(), cargarHistorial()]);
+    setGuardandoCobroEv(false);
+  };
+  // ────────────────────────────────────────────────────────────────────────────
 
   const renovarLicencia = async () => {
     setRenovando(true);
@@ -882,15 +989,25 @@ const ClienteDetalle = () => {
         {(esPropio || canManage) && instancia === "COMERCIAL" && (
           <section>
             <Button
-              onClick={() => { setShowCobro((v) => !v); setShowForm(false); }}
-              className={cn("w-full gap-2 text-base font-bold", showCobro ? "" : "bg-green-600 hover:bg-green-700 text-white border-0")}
-              variant={showCobro ? "outline" : "default"}
+              onClick={() => {
+                if (cliente.tipo_cliente === "evento") {
+                  const next = !modoSeleccion;
+                  setModoSeleccion(next);
+                  if (!next) { setEventosSeleccionados(new Set()); setShowCobroEventos(false); }
+                } else {
+                  setShowCobro((v) => !v); setShowForm(false);
+                }
+              }}
+              className={cn("w-full gap-2 text-base font-bold",
+                (showCobro || modoSeleccion) ? "" : "bg-green-600 hover:bg-green-700 text-white border-0"
+              )}
+              variant={(showCobro || modoSeleccion) ? "outline" : "default"}
             >
-              {showCobro ? <ChevronUp className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
-              {showCobro ? "Cancelar cobro" : "💰 Registrar cobro"}
+              {(showCobro || modoSeleccion) ? <ChevronUp className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+              {(showCobro || modoSeleccion) ? "Cancelar cobro" : "💰 Registrar cobro"}
             </Button>
 
-            {showCobro && (
+            {showCobro && cliente.tipo_cliente !== "evento" && (
               <div className="mt-3 rounded-2xl border border-success/30 bg-success/5 p-4 space-y-4">
                 <p className="text-xs font-bold uppercase tracking-wider text-success">Datos del cobro</p>
 
@@ -1157,7 +1274,7 @@ const ClienteDetalle = () => {
                 🎉 Eventos
                 <span className="ml-2 text-xs font-normal text-muted-foreground">({eventosAgenda.length})</span>
               </h2>
-              {(esPropio || canManage) && !showFormEvento && (
+              {(esPropio || canManage) && !showFormEvento && !modoSeleccion && (
                 <button
                   onClick={() => setShowFormEvento(true)}
                   className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground active:scale-95 transition-smooth"
@@ -1165,6 +1282,11 @@ const ClienteDetalle = () => {
                   <Plus className="h-3.5 w-3.5" />
                   Nuevo evento
                 </button>
+              )}
+              {modoSeleccion && (
+                <span className="text-[11px] font-semibold text-green-700 dark:text-green-400">
+                  Tocá los eventos a cobrar
+                </span>
               )}
             </div>
 
@@ -1288,43 +1410,205 @@ const ClienteDetalle = () => {
                     casamiento: "Casamiento", quinceanos: "Quinceaños",
                     corporativo: "Corporativo", social: "Social", musical: "Musical", otro: "Otro",
                   };
-                  return (
+                  const seleccionado = eventosSeleccionados.has(ev.id);
+                  const cardContent = (
+                    <div className="flex items-start gap-3">
+                      {/* Checkbox en modo selección */}
+                      {modoSeleccion && (
+                        <div className={cn(
+                          "mt-0.5 h-5 w-5 shrink-0 rounded-full border-2 flex items-center justify-center transition-colors",
+                          seleccionado
+                            ? "border-green-600 bg-green-600"
+                            : "border-muted-foreground bg-background"
+                        )}>
+                          {seleccionado && <CheckCircle2 className="h-3.5 w-3.5 text-white" />}
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-bold tracking-widest text-amber-600 uppercase mb-0.5">
+                          EV-{String(ev.numero_evento).padStart(3, "0")}
+                        </p>
+                        <h3 className="truncate text-sm font-bold">{ev.nombre_evento ?? "Sin nombre"}</h3>
+                        <div className="mt-1 flex items-center gap-2 flex-wrap">
+                          {ev.tipo_evento && (
+                            <span className="text-xs text-muted-foreground">{tipoLabel[ev.tipo_evento] ?? ev.tipo_evento}</span>
+                          )}
+                          {ev.fecha_evento && (
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Calendar className="h-3 w-3" />
+                              {new Date(ev.fecha_evento + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5">
+                        <span className={cn("rounded-full px-2.5 py-1 text-[10px] font-bold", estadoColors[ev.estado] ?? "bg-gray-100 text-gray-600")}>
+                          {ev.estado.charAt(0).toUpperCase() + ev.estado.slice(1)}
+                        </span>
+                        {ev.tarifa_evento && (
+                          <span className="text-xs font-bold text-primary">{formatPYG(ev.tarifa_evento)}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+
+                  return modoSeleccion ? (
+                    <div
+                      key={ev.id}
+                      onClick={() => toggleEventoSeleccionado(ev.id)}
+                      className={cn(
+                        "block rounded-2xl border p-4 shadow-card cursor-pointer transition-smooth active:scale-[0.99]",
+                        seleccionado
+                          ? "border-green-500 bg-green-50/60 dark:bg-green-950/30"
+                          : "border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 hover:border-amber-400"
+                      )}
+                    >
+                      {cardContent}
+                    </div>
+                  ) : (
                     <Link
                       key={ev.id}
                       to={`/app/clientes/${id}/eventos/${ev.id}`}
                       className="block rounded-2xl border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-4 shadow-card hover:border-amber-400 transition-smooth active:scale-[0.99]"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[10px] font-bold tracking-widest text-amber-600 uppercase mb-0.5">
-                            EV-{String(ev.numero_evento).padStart(3, "0")}
-                          </p>
-                          <h3 className="truncate text-sm font-bold">{ev.nombre_evento ?? "Sin nombre"}</h3>
-                          <div className="mt-1 flex items-center gap-2 flex-wrap">
-                            {ev.tipo_evento && (
-                              <span className="text-xs text-muted-foreground">{tipoLabel[ev.tipo_evento] ?? ev.tipo_evento}</span>
-                            )}
-                            {ev.fecha_evento && (
-                              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <Calendar className="h-3 w-3" />
-                                {new Date(ev.fecha_evento + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-1.5">
-                          <span className={cn("rounded-full px-2.5 py-1 text-[10px] font-bold", estadoColors[ev.estado] ?? "bg-gray-100 text-gray-600")}>
-                            {ev.estado.charAt(0).toUpperCase() + ev.estado.slice(1)}
-                          </span>
-                          {ev.tarifa_evento && (
-                            <span className="text-xs font-bold text-primary">{formatPYG(ev.tarifa_evento)}</span>
-                          )}
-                        </div>
-                      </div>
+                      {cardContent}
                     </Link>
                   );
                 })}
               </div>
+
+              {/* Barra de selección + form de cobro */}
+              {modoSeleccion && !showCobroEventos && eventosSeleccionados.size > 0 && (
+                <div className="rounded-2xl border-2 border-green-500 bg-green-50 dark:bg-green-950/30 p-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-green-800 dark:text-green-300">
+                      {eventosSeleccionados.size} evento{eventosSeleccionados.size !== 1 ? "s" : ""} seleccionado{eventosSeleccionados.size !== 1 ? "s" : ""}
+                    </p>
+                    <p className="text-xs text-green-700 dark:text-green-400">
+                      Total: {formatPYG(eventosAgenda.filter((ev) => eventosSeleccionados.has(ev.id)).reduce((s, ev) => s + (ev.tarifa_evento ?? 0), 0))}
+                    </p>
+                  </div>
+                  <Button
+                    onClick={abrirCobroEventos}
+                    className="gap-1.5 bg-green-600 hover:bg-green-700 text-white border-0 text-sm font-bold shrink-0"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Cobrar →
+                  </Button>
+                </div>
+              )}
+
+              {/* Formulario de cobro de eventos */}
+              {showCobroEventos && (
+                <div className="rounded-2xl border-2 border-green-500 bg-green-50/60 dark:bg-green-950/30 p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-bold uppercase tracking-wider text-green-700 dark:text-green-400">Registrar cobro de eventos</p>
+                    <button onClick={() => setShowCobroEventos(false)} className="text-muted-foreground hover:text-foreground">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {/* Resumen de eventos seleccionados */}
+                  <div className="rounded-xl bg-white/60 dark:bg-black/20 border border-green-200 dark:border-green-800 p-3 space-y-1.5">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Eventos incluidos</p>
+                    {eventosAgenda.filter((ev) => eventosSeleccionados.has(ev.id)).map((ev) => (
+                      <div key={ev.id} className="flex items-center justify-between text-xs">
+                        <span className="font-semibold">EV-{String(ev.numero_evento).padStart(3, "0")} · {ev.nombre_evento ?? "Sin nombre"}</span>
+                        <span className="text-muted-foreground shrink-0 ml-2">{ev.tarifa_evento ? formatPYG(ev.tarifa_evento) : "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Datos de facturación */}
+                  <div className="rounded-xl border border-amber-200 bg-amber-50/50 dark:bg-amber-950/20 p-3 space-y-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Datos de facturación</p>
+                    <p className="text-[11px] text-muted-foreground">Verificá y editá si el pagador es distinto al titular del contrato.</p>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Razón Social</Label>
+                      <Input
+                        placeholder="Razón social del pagador"
+                        value={cobroEv.razon_social_factura}
+                        onChange={(e) => setCobEv("razon_social_factura", e.target.value)}
+                        className="h-10 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">RUC</Label>
+                      <Input
+                        placeholder="RUC del pagador"
+                        value={cobroEv.ruc_factura}
+                        onChange={(e) => setCobEv("ruc_factura", e.target.value)}
+                        className="h-10 text-sm"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Monto */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Monto cobrado (Gs.) <span className="text-destructive">*</span>
+                    </Label>
+                    <Input
+                      type="number"
+                      placeholder="Total"
+                      value={cobroEv.monto}
+                      onChange={(e) => setCobEv("monto", e.target.value)}
+                      className="h-11"
+                    />
+                  </div>
+
+                  {/* Método + Fecha */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Método</Label>
+                      <select
+                        value={cobroEv.metodo_pago}
+                        onChange={(e) => setCobEv("metodo_pago", e.target.value)}
+                        className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                      >
+                        <option value="efectivo">Efectivo</option>
+                        <option value="transferencia">Transferencia</option>
+                        <option value="cheque">Cheque</option>
+                        <option value="debito">Débito</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Fecha <span className="text-destructive">*</span></Label>
+                      <Input
+                        type="date"
+                        value={cobroEv.fecha_cobro}
+                        onChange={(e) => setCobEv("fecha_cobro", e.target.value)}
+                        className="h-11"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Notas */}
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notas</Label>
+                    <Textarea
+                      placeholder="Observaciones del cobro..."
+                      value={cobroEv.notas}
+                      onChange={(e) => setCobEv("notas", e.target.value)}
+                      rows={2}
+                      className="resize-none text-sm"
+                    />
+                  </div>
+
+                  <div className="rounded-xl bg-green-100 dark:bg-green-900/30 px-3 py-2.5 text-xs text-green-800 dark:text-green-300 font-semibold">
+                    ✅ Al confirmar, el cliente pasará automáticamente a <strong>COBRANZAS</strong>.
+                  </div>
+
+                  <Button
+                    onClick={registrarCobroEventos}
+                    disabled={guardandoCobroEv || !cobroEv.monto || !cobroEv.fecha_cobro}
+                    className="w-full h-11 gap-2 font-semibold bg-green-600 hover:bg-green-700 text-white border-0"
+                  >
+                    {guardandoCobroEv ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    {guardandoCobroEv ? "Registrando..." : `Confirmar cobro de ${eventosSeleccionados.size} evento(s)`}
+                  </Button>
+                </div>
+              )}
             )}
           </section>
         )}
@@ -1505,6 +1789,33 @@ const ClienteDetalle = () => {
                         <Calendar className="h-3 w-3" />
                         Período: {c.periodo_desde ?? "—"} → {c.periodo_hasta ?? "—"}
                       </p>
+                    )}
+
+                    {/* Eventos cobrados */}
+                    {c.eventos_ids && c.eventos_ids.length > 0 && (
+                      <div className="mt-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 px-2.5 py-2 space-y-1">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Eventos cobrados</p>
+                        {eventosAgenda
+                          .filter((ev) => c.eventos_ids!.includes(ev.id))
+                          .map((ev) => (
+                            <p key={ev.id} className="text-[11px] text-foreground">
+                              EV-{String(ev.numero_evento).padStart(3, "0")} · {ev.nombre_evento ?? "Sin nombre"}
+                            </p>
+                          ))}
+                        {/* Si los eventos no están cargados (cobros históricos) */}
+                        {eventosAgenda.filter((ev) => c.eventos_ids!.includes(ev.id)).length === 0 && (
+                          <p className="text-[11px] text-muted-foreground">{c.eventos_ids.length} evento(s)</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Datos de facturación (si difiere del titular) */}
+                    {(c.razon_social_factura || c.ruc_factura) && (
+                      <div className="mt-2 rounded-lg bg-muted/50 px-2.5 py-2 space-y-0.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Facturado a</p>
+                        {c.razon_social_factura && <p className="text-[11px] text-foreground font-semibold">{c.razon_social_factura}</p>}
+                        {c.ruc_factura && <p className="text-[11px] text-muted-foreground">RUC: {c.ruc_factura}</p>}
+                      </div>
                     )}
 
                     {c.notas && (
