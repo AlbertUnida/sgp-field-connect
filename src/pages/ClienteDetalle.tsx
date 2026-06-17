@@ -7,6 +7,7 @@ import {
   AlertTriangle, RotateCcw, Camera, AlertCircle, X, Target
 } from "lucide-react";
 import { RESULTADOS_GESTION } from "@/lib/resultados-gestion";
+import { getLeadScoreInfo, scoreHeaderClasses } from "@/lib/lead-score";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -887,6 +888,20 @@ const ClienteDetalle = () => {
                 {cliente.tipo_cliente === "evento" ? "🎉 Evento" : "🏪 Local"}
               </span>
             )}
+            {/* Lead Score — calculado de las gestiones cargadas */}
+            {gestiones.length > 0 && gestiones.some(g => (g.datos_extra as any)?.score != null) && (() => {
+              const total = gestiones.reduce((sum, g) => {
+                const s = Number((g.datos_extra as any)?.score);
+                return sum + (isNaN(s) ? 0 : s);
+              }, 0);
+              const info = getLeadScoreInfo(total);
+              const cls = scoreHeaderClasses(info.category);
+              return (
+                <span className={cn("rounded-full px-3 py-1 text-[11px] font-bold uppercase", cls.bg, cls.text)}>
+                  {info.emoji} {info.label} {total > 0 ? `+${total}` : total} pts
+                </span>
+              );
+            })()}
           </div>
         </div>
       </header>

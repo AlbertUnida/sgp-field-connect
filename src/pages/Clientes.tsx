@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
+import { getLeadScoreInfo, scoreClasses } from "@/lib/lead-score";
 
 interface ClienteReal {
   id: string;
@@ -26,6 +27,7 @@ interface ClienteReal {
   creado_por: string | null;
   creado_por_nombre: string | null;
   tipo_cliente: string | null;
+  lead_score: number | null;
 }
 
 const Clientes = () => {
@@ -71,8 +73,18 @@ const Clientes = () => {
       query = query.eq("ejecutivo_id", ejFilter);
     }
 
-    const { data, error } = await query;
+    // Carga clientes y scores en paralelo
+    const [{ data, error }, { data: scoreRows }] = await Promise.all([
+      query,
+      supabase.from("cliente_lead_scores").select("cliente_id, lead_score"),
+    ]);
     if (error) console.error("Error cargando clientes:", error);
+
+    // Mapa cliente_id → lead_score
+    const scoreMap = new Map<string, number>();
+    (scoreRows ?? []).forEach((r: any) => {
+      scoreMap.set(String(r.cliente_id), Number(r.lead_score) || 0);
+    });
 
     const mapped = (data ?? []).map((c: any) => ({
       ...c,
@@ -86,6 +98,7 @@ const Clientes = () => {
       creado_por_nombre: c.creador
         ? `${c.creador.nombre ?? ""} ${c.creador.apellido ?? ""}`.trim()
         : null,
+      lead_score: scoreMap.has(String(c.id)) ? scoreMap.get(String(c.id))! : null,
     }));
 
     setClientes(mapped);
@@ -264,7 +277,19 @@ const Clientes = () => {
                       </p>
                     )}
                   </div>
-                  <InstanciaBadge instancia={c.instancia} />
+                  {/* Columna derecha: instancia + lead score */}
+                  <div className="flex flex-col items-end gap-1.5 shrink-0">
+                    <InstanciaBadge instancia={c.instancia} />
+                    {c.lead_score !== null && (() => {
+                      const info = getLeadScoreInfo(c.lead_score);
+                      const cls = scoreClasses(info.category);
+                      return (
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", cls.bg, cls.text)}>
+                          {info.emoji} {info.label}
+                        </span>
+                      );
+                    })()}
+                  </div>
                 </div>
                 {/* Aviso CENSO para ejecutivos */}
                 {!canManage && c.instancia === "CENSO" && (
