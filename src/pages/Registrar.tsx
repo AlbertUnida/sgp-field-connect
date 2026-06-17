@@ -19,6 +19,8 @@ interface ClienteOpcion {
   ciudad: string | null;
   instancia: string | null;
   tipo_cliente: string | null;
+  telefono: string | null;
+  email_cliente: string | null;
 }
 
 interface TipoResultado {
@@ -73,9 +75,20 @@ const Registrar = () => {
   const [fechaEntrega, setFechaEntrega] = useState("");
   const [actaNro, setActaNro] = useState("");
 
+  // Contacto por canal (Llamada / WhatsApp / Email)
+  const [contactoNombre, setContactoNombre] = useState("");
+  const [contactoApellido, setContactoApellido] = useState("");
+  const [contactoTelefono, setContactoTelefono] = useState("");
+  const [contactoEmail, setContactoEmail] = useState("");
+  const [contactoFecha, setContactoFecha] = useState(new Date().toISOString().split("T")[0]);
+
   // Resultado real de la gestión
   const [resultadoReal, setResultadoReal] = useState("");
   const resultadoRealObj = RESULTADOS_GESTION.find((r) => r.key === resultadoReal) ?? null;
+
+  // Computed helpers
+  const mostrarTarea = tipo === "visita";
+  const mostrarResultado = tipo !== "email" && (tipo !== "visita" || !!resultadoId);
 
   // IDs de resultado ya completados para el cliente seleccionado (para filtro nota_reclamo)
   const [resultadosCompletadosCliente, setResultadosCompletadosCliente] = useState<Set<string>>(new Set());
@@ -123,8 +136,15 @@ const Registrar = () => {
     });
   };
 
-  // Auto-captura cuando el tipo es visita
+  // Al cambiar canal: resetear campos de tarea/resultado y GPS
   useEffect(() => {
+    // Resetear TAREA y RESULTADO al cambiar canal (solo relevantes para VISITA)
+    setResultadoId("");
+    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega(""); setActaNro("");
+    setResultadoReal("");
+    // Pre-cargar fecha de hoy para contacto
+    setContactoFecha(new Date().toISOString().split("T")[0]);
+
     if (tipo !== "visita") {
       setGps(null);
       setGpsEstado("idle");
@@ -147,7 +167,7 @@ const Registrar = () => {
     setCargandoClientes(true);
     let query = supabase
       .from("clientes")
-      .select("id, numero_cliente, nombre_comercial, ciudad, instancia, tipo_cliente")
+      .select("id, numero_cliente, nombre_comercial, ciudad, instancia, tipo_cliente, telefono, email_cliente")
       .eq("activo", true)
       .order("nombre_comercial");
 
@@ -191,7 +211,13 @@ const Registrar = () => {
     setMostrarDropdown(false);
     inputRef.current?.blur();
     setResultadoId("");
-    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
+    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega(""); setActaNro("");
+    setResultadoReal("");
+    // Pre-cargar datos de contacto según canal actual
+    setContactoNombre(""); setContactoApellido("");
+    setContactoTelefono(c.telefono ?? "");
+    setContactoEmail(c.email_cliente ?? "");
+    setContactoFecha(new Date().toISOString().split("T")[0]);
     setEventoSeleccionado("");
     // Fetch gestiones para filtro secuencial de nota_reclamo
     const { data } = await supabase
@@ -333,17 +359,21 @@ const Registrar = () => {
     if (clienteSeleccionado.tipo_cliente === "evento" && !eventoSeleccionado) {
       toast.error("Seleccioná el evento para registrar la gestión"); return;
     }
-    if (!resultadoId) { toast.error("Seleccioná la tarea realizada"); return; }
-    if (!resultadoReal) { toast.error("Seleccioná el resultado de la gestión"); return; }
 
-    // Validaciones de formularios especiales
-    if (
-      (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
-       tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion") &&
-      !receptorNombre.trim()
-    ) {
-      toast.error("Ingresá el nombre de quien recibió la nota / estuvo presente");
-      return;
+    // Validaciones por canal
+    if (tipo === "visita") {
+      if (!resultadoId) { toast.error("Seleccioná la tarea realizada"); return; }
+      if (!resultadoReal) { toast.error("Seleccioná el resultado de la gestión"); return; }
+      if (
+        (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+         tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion") &&
+        !receptorNombre.trim()
+      ) {
+        toast.error("Ingresá el nombre de quien recibió la nota / estuvo presente"); return;
+      }
+    } else if (tipo === "llamada" || tipo === "whatsapp") {
+      if (!contactoNombre.trim()) { toast.error("Ingresá el nombre del contacto"); return; }
+      if (!resultadoReal) { toast.error("Seleccioná el resultado de la gestión"); return; }
     }
 
     setGuardando(true);
@@ -381,20 +411,37 @@ const Registrar = () => {
       setSubiendoFoto(false);
     }
 
-    // Construir datos_extra según tipo_formulario
+    // Construir datos_extra según canal y tipo_formulario
     const datosExtra: Record<string, unknown> = {};
-    if (
-      tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
-      tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion"
-    ) {
-      datosExtra.receptor_nombre = receptorNombre.trim();
-      datosExtra.receptor_apellido = receptorApellido.trim() || null;
-      datosExtra.fecha_entrega = fechaEntrega || null;
-      datosExtra.acta_nro = actaNro.trim() || null;
+
+    if (tipo === "visita") {
+      // Visita: datos del receptor de notas/reuniones
+      if (
+        tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+        tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion"
+      ) {
+        datosExtra.receptor_nombre = receptorNombre.trim();
+        datosExtra.receptor_apellido = receptorApellido.trim() || null;
+        datosExtra.fecha_entrega = fechaEntrega || null;
+        datosExtra.acta_nro = actaNro.trim() || null;
+      }
+      datosExtra.resultado_real = resultadoReal || null;
+      datosExtra.score = resultadoRealObj?.score ?? null;
+    } else if (tipo === "llamada" || tipo === "whatsapp") {
+      // Llamada / WhatsApp: datos del contacto
+      datosExtra.contacto_nombre = contactoNombre.trim() || null;
+      datosExtra.contacto_apellido = contactoApellido.trim() || null;
+      datosExtra.contacto_telefono = contactoTelefono.trim() || null;
+      datosExtra.contacto_fecha = contactoFecha || null;
+      datosExtra.resultado_real = resultadoReal || null;
+      datosExtra.score = resultadoRealObj?.score ?? null;
+    } else if (tipo === "email") {
+      // Email: datos del destinatario, sin resultado
+      datosExtra.contacto_nombre = contactoNombre.trim() || null;
+      datosExtra.contacto_apellido = contactoApellido.trim() || null;
+      datosExtra.contacto_email = contactoEmail.trim() || null;
+      datosExtra.contacto_fecha = contactoFecha || null;
     }
-    // Siempre guardar el resultado real y su score
-    datosExtra.resultado_real = resultadoReal || null;
-    datosExtra.score = resultadoRealObj?.score ?? null;
 
     const { error } = await supabase.from("gestiones").insert({
       cliente_id: parseInt(clienteSeleccionado.id),
@@ -417,9 +464,8 @@ const Registrar = () => {
       return;
     }
 
-    // Actualizar ultima_gestion en el cliente
-    // auto-agenda 30 días si el resultado lo requiere
-    const autoAgenda = resultadoRealObj?.autoAgenda ?? false;
+    // Auto-agenda 30 días si el resultado lo requiere (solo si hay resultado)
+    const autoAgenda = (tipo !== "email") && (resultadoRealObj?.autoAgenda ?? false);
     const proximaFinal = autoAgenda
       ? (() => {
           const d = new Date();
@@ -439,7 +485,7 @@ const Registrar = () => {
       toast.success("Gestión registrada en la bitácora ✅");
     }
 
-    // Limpiar formulario
+    // Limpiar formulario completo
     setClienteSeleccionado(null);
     setBusqueda("");
     setResultadoId("");
@@ -447,6 +493,9 @@ const Registrar = () => {
     setProxima("");
     setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega(""); setActaNro("");
     setResultadoReal("");
+    setContactoNombre(""); setContactoApellido("");
+    setContactoTelefono(""); setContactoEmail("");
+    setContactoFecha(new Date().toISOString().split("T")[0]);
     setResultadosCompletadosCliente(new Set());
     quitarFoto();
     setGuardando(false);
@@ -603,7 +652,8 @@ const Registrar = () => {
             </div>
           )}
 
-          {/* Tarea */}
+          {/* ── TAREA (solo para VISITA) ── */}
+          {mostrarTarea && (
           <div className="space-y-1.5">
             <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Tarea <span className="text-destructive">*</span>
@@ -626,9 +676,10 @@ const Registrar = () => {
               </select>
             )}
           </div>
+          )}
 
           {/* ── Formulario especial: Nota / Visita Seguimiento / Reunión (con receptor) ── */}
-          {(tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+          {mostrarTarea && (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
             tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion") && (
             <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
               <p className="text-xs font-bold uppercase tracking-wider text-primary">
@@ -683,8 +734,65 @@ const Registrar = () => {
             </div>
           )}
 
-          {/* ── Bloque RESULTADO — aparece cuando se seleccionó una Tarea ── */}
-          {resultadoId && (
+          {/* ── Bloque contacto: LLAMADA / WHATSAPP ── */}
+          {(tipo === "llamada" || tipo === "whatsapp") && (
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-primary">
+                {tipo === "llamada" ? "📞 Datos de la llamada" : "💬 Datos del WhatsApp"}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Nombre <span className="text-destructive">*</span></Label>
+                  <Input placeholder="Nombre" value={contactoNombre} onChange={(e) => setContactoNombre(e.target.value)} className="h-10 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Apellido</Label>
+                  <Input placeholder="Apellido" value={contactoApellido} onChange={(e) => setContactoApellido(e.target.value)} className="h-10 text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Nro. Teléfono</Label>
+                  <Input placeholder="09X XXX XXX" value={contactoTelefono} onChange={(e) => setContactoTelefono(e.target.value)} className="h-10 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Fecha</Label>
+                  <Input type="date" value={contactoFecha} onChange={(e) => setContactoFecha(e.target.value)} className="h-10 text-sm" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Bloque contacto: EMAIL ── */}
+          {tipo === "email" && (
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+              <p className="text-xs font-bold uppercase tracking-wider text-primary">✉️ Datos del destinatario</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Nombre</Label>
+                  <Input placeholder="Nombre" value={contactoNombre} onChange={(e) => setContactoNombre(e.target.value)} className="h-10 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Apellido</Label>
+                  <Input placeholder="Apellido" value={contactoApellido} onChange={(e) => setContactoApellido(e.target.value)} className="h-10 text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Email</Label>
+                  <Input type="email" placeholder="correo@ejemplo.com" value={contactoEmail} onChange={(e) => setContactoEmail(e.target.value)} className="h-10 text-sm" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Fecha</Label>
+                  <Input type="date" value={contactoFecha} onChange={(e) => setContactoFecha(e.target.value)} className="h-10 text-sm" />
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground italic">El resultado se registrará cuando llegue la respuesta.</p>
+            </div>
+          )}
+
+          {/* ── Bloque RESULTADO — visita (tras elegir tarea) / llamada / whatsapp ── */}
+          {mostrarResultado && (
             <div className="rounded-xl border border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Target className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />

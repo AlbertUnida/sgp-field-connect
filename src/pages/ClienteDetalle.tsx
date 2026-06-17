@@ -218,15 +218,26 @@ const ClienteDetalle = () => {
   const [cargandoResultados, setCargandoResultados] = useState(false);
   const [resultadoId, setResultadoId] = useState("");
 
-  // Campos especiales según tipo_formulario
+  // Campos especiales según tipo_formulario (VISITA)
   const [receptorNombre, setReceptorNombre] = useState("");
   const [receptorApellido, setReceptorApellido] = useState("");
   const [fechaEntrega, setFechaEntrega] = useState("");
   const [actaNro, setActaNro] = useState("");
 
+  // Contacto por canal (Llamada / WhatsApp / Email)
+  const [contactoNombre, setContactoNombre] = useState("");
+  const [contactoApellido, setContactoApellido] = useState("");
+  const [contactoTelefono, setContactoTelefono] = useState("");
+  const [contactoEmail, setContactoEmail] = useState("");
+  const [contactoFecha, setContactoFecha] = useState(new Date().toISOString().split("T")[0]);
+
   // Resultado real de la gestión
   const [resultadoReal, setResultadoReal] = useState("");
   const resultadoRealObj = RESULTADOS_GESTION.find((r) => r.key === resultadoReal) ?? null;
+
+  // Helpers por canal
+  const mostrarTarea = form.tipo === "visita";
+  const mostrarResultado = form.tipo !== "email" && (form.tipo !== "visita" || !!resultadoId);
 
   // Computed: resultado seleccionado y su tipo de formulario
   const resultadoSeleccionado = tiposResultado.find((t) => t.id === resultadoId) ?? null;
@@ -713,35 +724,55 @@ const ClienteDetalle = () => {
 
   const registrarActividad = async () => {
     if (!form.tipo) { toast.error("Seleccioná el tipo de gestión"); return; }
-    if (!resultadoId) { toast.error("Seleccioná la tarea realizada"); return; }
-    if (!resultadoReal) { toast.error("Seleccioná el resultado de la gestión"); return; }
-    if (
-      (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
-       tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion") &&
-      !receptorNombre.trim()
-    ) {
-      toast.error("Ingresá el nombre de quien estuvo presente"); return;
+
+    // Validaciones por canal
+    if (form.tipo === "visita") {
+      if (!resultadoId) { toast.error("Seleccioná la tarea realizada"); return; }
+      if (!resultadoReal) { toast.error("Seleccioná el resultado de la gestión"); return; }
+      if (
+        (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+         tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion") &&
+        !receptorNombre.trim()
+      ) {
+        toast.error("Ingresá el nombre de quien estuvo presente"); return;
+      }
+    } else if (form.tipo === "llamada" || form.tipo === "whatsapp") {
+      if (!contactoNombre.trim()) { toast.error("Ingresá el nombre del contacto"); return; }
+      if (!resultadoReal) { toast.error("Seleccioná el resultado de la gestión"); return; }
     }
 
     setGuardando(true);
 
-    // Construir datos_extra según tipo de formulario
+    // Construir datos_extra según canal
     const datosExtra: Record<string, unknown> = {};
-    if (
-      tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
-      tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion"
-    ) {
-      datosExtra.receptor_nombre = receptorNombre.trim();
-      datosExtra.receptor_apellido = receptorApellido.trim() || null;
-      datosExtra.fecha_entrega = fechaEntrega || null;
-      datosExtra.acta_nro = actaNro.trim() || null;
+    if (form.tipo === "visita") {
+      if (
+        tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+        tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion"
+      ) {
+        datosExtra.receptor_nombre = receptorNombre.trim();
+        datosExtra.receptor_apellido = receptorApellido.trim() || null;
+        datosExtra.fecha_entrega = fechaEntrega || null;
+        datosExtra.acta_nro = actaNro.trim() || null;
+      }
+      datosExtra.resultado_real = resultadoReal || null;
+      datosExtra.score = resultadoRealObj?.score ?? null;
+    } else if (form.tipo === "llamada" || form.tipo === "whatsapp") {
+      datosExtra.contacto_nombre = contactoNombre.trim() || null;
+      datosExtra.contacto_apellido = contactoApellido.trim() || null;
+      datosExtra.contacto_telefono = contactoTelefono.trim() || null;
+      datosExtra.contacto_fecha = contactoFecha || null;
+      datosExtra.resultado_real = resultadoReal || null;
+      datosExtra.score = resultadoRealObj?.score ?? null;
+    } else if (form.tipo === "email") {
+      datosExtra.contacto_nombre = contactoNombre.trim() || null;
+      datosExtra.contacto_apellido = contactoApellido.trim() || null;
+      datosExtra.contacto_email = contactoEmail.trim() || null;
+      datosExtra.contacto_fecha = contactoFecha || null;
     }
-    // Siempre guardar resultado real y score
-    datosExtra.resultado_real = resultadoReal || null;
-    datosExtra.score = resultadoRealObj?.score ?? null;
 
     // Auto proxima_accion según resultado real
-    const autoAgenda = resultadoRealObj?.autoAgenda ?? false;
+    const autoAgenda = form.tipo !== "email" && (resultadoRealObj?.autoAgenda ?? false);
     const proximaFinal = autoAgenda
       ? (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().split("T")[0]; })()
       : form.proxima_accion || null;
@@ -775,9 +806,11 @@ const ClienteDetalle = () => {
       toast.success("Actividad registrada en la bitácora ✅");
     }
     setForm({ tipo: "visita", notas: "", proxima_accion: "" });
-    setResultadoId("");
+    setResultadoId(""); setResultadoReal("");
     setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega(""); setActaNro("");
-    setResultadoReal("");
+    setContactoNombre(""); setContactoApellido("");
+    setContactoTelefono(""); setContactoEmail("");
+    setContactoFecha(new Date().toISOString().split("T")[0]);
     setShowForm(false);
     await cargarGestiones();
     await cargarCliente();
@@ -1677,7 +1710,15 @@ const ClienteDetalle = () => {
         {esPropio && instancia !== "CENSO" && cliente.tipo_cliente !== "evento" && (
           <section>
             <Button
-              onClick={() => setShowForm((v) => !v)}
+              onClick={() => {
+                if (!showForm) {
+                  // Pre-cargar datos del cliente al abrir el form
+                  setContactoTelefono(cliente.telefono ?? "");
+                  setContactoEmail(cliente.email_cliente ?? "");
+                  setContactoFecha(new Date().toISOString().split("T")[0]);
+                }
+                setShowForm((v) => !v);
+              }}
               className="w-full gap-2"
               variant={showForm ? "outline" : "default"}
             >
@@ -1695,7 +1736,17 @@ const ClienteDetalle = () => {
                       <button
                         key={t.key}
                         type="button"
-                        onClick={() => setForm((p) => ({ ...p, tipo: t.key }))}
+                        onClick={() => {
+                          setForm((p) => ({ ...p, tipo: t.key, proxima_accion: "" }));
+                          // Resetear campos al cambiar canal
+                          setResultadoId(""); setResultadoReal("");
+                          setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega(""); setActaNro("");
+                          setContactoNombre(""); setContactoApellido("");
+                          // Pre-cargar teléfono y email del cliente
+                          setContactoTelefono(cliente?.telefono ?? "");
+                          setContactoEmail(cliente?.email_cliente ?? "");
+                          setContactoFecha(new Date().toISOString().split("T")[0]);
+                        }}
                         className={cn(
                           "flex flex-col items-center gap-1.5 rounded-xl border py-3 text-[11px] font-bold uppercase transition-smooth",
                           form.tipo === t.key ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary text-muted-foreground"
@@ -1708,7 +1759,8 @@ const ClienteDetalle = () => {
                   </div>
                 </div>
 
-                {/* Tarea */}
+                {/* Tarea — solo para VISITA */}
+                {mostrarTarea && (
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tarea <span className="text-destructive">*</span></Label>
                   <select
@@ -1723,9 +1775,10 @@ const ClienteDetalle = () => {
                     ))}
                   </select>
                 </div>
+                )}
 
                 {/* Bloque especial: Nota / Visita Seguimiento / Reunión (con receptor) */}
-                {(tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+                {mostrarTarea && (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
                   tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion") && (
                   <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
                     <p className="text-xs font-bold text-primary uppercase tracking-wider">
@@ -1755,8 +1808,65 @@ const ClienteDetalle = () => {
                   </div>
                 )}
 
-                {/* Bloque RESULTADO — aparece cuando se seleccionó una Tarea */}
-                {resultadoId && (
+                {/* Bloque contacto: LLAMADA / WHATSAPP */}
+                {(form.tipo === "llamada" || form.tipo === "whatsapp") && (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-primary">
+                      {form.tipo === "llamada" ? "📞 Datos de la llamada" : "💬 Datos del WhatsApp"}
+                    </p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Nombre <span className="text-destructive">*</span></Label>
+                        <Input placeholder="Nombre" value={contactoNombre} onChange={(e) => setContactoNombre(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Apellido</Label>
+                        <Input placeholder="Apellido" value={contactoApellido} onChange={(e) => setContactoApellido(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Nro. Teléfono</Label>
+                        <Input placeholder="09X XXX XXX" value={contactoTelefono} onChange={(e) => setContactoTelefono(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Fecha</Label>
+                        <Input type="date" value={contactoFecha} onChange={(e) => setContactoFecha(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Bloque contacto: EMAIL */}
+                {form.tipo === "email" && (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-primary">✉️ Datos del destinatario</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Nombre</Label>
+                        <Input placeholder="Nombre" value={contactoNombre} onChange={(e) => setContactoNombre(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Apellido</Label>
+                        <Input placeholder="Apellido" value={contactoApellido} onChange={(e) => setContactoApellido(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Email</Label>
+                        <Input type="email" placeholder="correo@ejemplo.com" value={contactoEmail} onChange={(e) => setContactoEmail(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Fecha</Label>
+                        <Input type="date" value={contactoFecha} onChange={(e) => setContactoFecha(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground italic">El resultado se registrará cuando llegue la respuesta.</p>
+                  </div>
+                )}
+
+                {/* Bloque RESULTADO — visita (tras tarea) / llamada / whatsapp */}
+                {mostrarResultado && (
                   <div className="rounded-xl border border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-3">
                     <div className="flex items-center gap-2">
                       <Target className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -2029,7 +2139,7 @@ const ClienteDetalle = () => {
                       </div>
                     )}
 
-                    {/* datos_extra: Nota Comercial / Receptor */}
+                    {/* datos_extra: Receptor (visita con nota/reunión) */}
                     {de && de.receptor_nombre && (
                       <div className="mt-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 space-y-0.5">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-primary">📄 Receptor</p>
@@ -2043,6 +2153,42 @@ const ClienteDetalle = () => {
                         )}
                         {de.acta_nro && (
                           <p className="text-xs text-muted-foreground">Acta Nro.: {de.acta_nro as string}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* datos_extra: Contacto (llamada / whatsapp) */}
+                    {de && de.contacto_nombre && !de.contacto_email && (
+                      <div className="mt-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 space-y-0.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-primary">
+                          {g.tipo === "llamada" ? "📞 Contacto" : "💬 Contacto"}
+                        </p>
+                        <p className="text-xs text-foreground">
+                          {[de.contacto_nombre, de.contacto_apellido].filter(Boolean).join(" ")}
+                        </p>
+                        {de.contacto_telefono && (
+                          <p className="text-xs text-muted-foreground">Tel: {de.contacto_telefono as string}</p>
+                        )}
+                        {de.contacto_fecha && (
+                          <p className="text-xs text-muted-foreground">
+                            Fecha: {new Date(de.contacto_fecha + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* datos_extra: Email */}
+                    {de && de.contacto_email && (
+                      <div className="mt-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 space-y-0.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-primary">✉️ Destinatario</p>
+                        <p className="text-xs text-foreground">
+                          {[de.contacto_nombre, de.contacto_apellido].filter(Boolean).join(" ")}
+                        </p>
+                        <p className="text-xs text-muted-foreground">{de.contacto_email as string}</p>
+                        {de.contacto_fecha && (
+                          <p className="text-xs text-muted-foreground">
+                            Fecha: {new Date(de.contacto_fecha + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
+                          </p>
                         )}
                       </div>
                     )}
