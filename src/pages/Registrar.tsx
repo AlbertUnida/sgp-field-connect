@@ -947,7 +947,7 @@ const Registrar = () => {
 
         <Button
           onClick={guardar}
-          disabled={guardando || subiendoFoto || !clienteSeleccionado || !resultadoId || clienteSeleccionado?.instancia === "CENSO"}
+          disabled={guardando || subiendoFoto || !clienteSeleccionado || (tipo === "visita" && !resultadoId) || clienteSeleccionado?.instancia === "CENSO"}
           className="h-13 w-full gap-2 text-base font-semibold"
         >
           <Loader2 className={cn("h-5 w-5 animate-spin", !guardando && !subiendoFoto && "hidden")} />
