@@ -96,12 +96,13 @@ const Clientes = () => {
     return clientes.filter((c) => {
       const qLower = q.toLowerCase();
       const idStr = c.numero_cliente ? String(c.numero_cliente).padStart(4, "0") : "";
+      const soloNumeros = q.replace(/\D/g, "");
       const matchQ =
         !q ||
         c.nombre_comercial.toLowerCase().includes(qLower) ||
         (c.rubro ?? "").toLowerCase().includes(qLower) ||
         (c.ciudad ?? "").toLowerCase().includes(qLower) ||
-        idStr.includes(q.replace(/\D/g, "")) // busca por número (ignora letras)
+        (soloNumeros.length > 0 && idStr.includes(soloNumeros)) // busca por número solo si hay dígitos
 
       let matchF: boolean;
       if (canManage) {

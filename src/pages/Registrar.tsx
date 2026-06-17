@@ -448,9 +448,9 @@ const Registrar = () => {
       evento_id: eventoSeleccionado || null,
       ejecutivo_id: user!.id,
       tipo,
-      resultado: resultadoSeleccionado?.nombre ?? "",
-      resultado_id: resultadoId,
-      datos_extra: datosExtra,
+      resultado: resultadoSeleccionado?.nombre || null,
+      resultado_id: resultadoId || null,          // null cuando no hay TAREA (Llamada/Email/WA)
+      datos_extra: Object.keys(datosExtra).length > 0 ? datosExtra : null,
       nota: notas || null,
       fecha_inicio: new Date().toISOString(),
       lat_inicio: coordenadas?.lat ?? null,

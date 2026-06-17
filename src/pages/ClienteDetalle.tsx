@@ -781,9 +781,9 @@ const ClienteDetalle = () => {
       cliente_id: parseInt(id!),
       ejecutivo_id: user!.id,
       tipo: form.tipo,
-      resultado: resultadoSeleccionado?.nombre ?? "",
-      resultado_id: resultadoId,
-      datos_extra: datosExtra,
+      resultado: resultadoSeleccionado?.nombre || null,
+      resultado_id: resultadoId || null,          // null cuando no hay TAREA (Llamada/Email/WA)
+      datos_extra: Object.keys(datosExtra).length > 0 ? datosExtra : null,
       nota: form.notas || null,
       fecha_inicio: new Date().toISOString(),
     });
