@@ -4,8 +4,9 @@ import {
   ArrowLeft, MapPin, Phone, Building2, FileText, Calendar,
   Plus, Car, PhoneCall, Mail, CheckCircle2, Clock, Loader2,
   ChevronDown, ChevronUp, User, UserCheck, Pencil, MessageCircle,
-  AlertTriangle, RotateCcw, Camera, AlertCircle, X
+  AlertTriangle, RotateCcw, Camera, AlertCircle, X, Target
 } from "lucide-react";
+import { RESULTADOS_GESTION } from "@/lib/resultados-gestion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -50,7 +51,7 @@ interface Cliente {
 interface TipoResultado {
   id: string;
   nombre: string;
-  tipo_formulario: "sin_medios" | "nota_comercial" | "nota_reclamo" | null;
+  tipo_formulario: "sin_medios" | "nota_comercial" | "nota_reclamo" | "visita_seguimiento" | "reunion" | null;
   tipo_cartera: string;
   activo: boolean;
   orden: number;
@@ -221,6 +222,11 @@ const ClienteDetalle = () => {
   const [receptorNombre, setReceptorNombre] = useState("");
   const [receptorApellido, setReceptorApellido] = useState("");
   const [fechaEntrega, setFechaEntrega] = useState("");
+  const [actaNro, setActaNro] = useState("");
+
+  // Resultado real de la gestión
+  const [resultadoReal, setResultadoReal] = useState("");
+  const resultadoRealObj = RESULTADOS_GESTION.find((r) => r.key === resultadoReal) ?? null;
 
   // Computed: resultado seleccionado y su tipo de formulario
   const resultadoSeleccionado = tiposResultado.find((t) => t.id === resultadoId) ?? null;
@@ -322,10 +328,16 @@ const ClienteDetalle = () => {
 
   const handleResultadoChange = (id: string) => {
     setResultadoId(id);
-    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
-    // Auto-completar fecha de hoy para nota_comercial y nota_reclamo
+    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega(""); setActaNro("");
+    setResultadoReal("");
+    // Auto-completar fecha de hoy para tareas con receptor
     const tipo = tiposResultado.find((t) => t.id === id);
-    if (tipo?.tipo_formulario === "nota_comercial" || tipo?.tipo_formulario === "nota_reclamo") {
+    if (
+      tipo?.tipo_formulario === "nota_comercial" ||
+      tipo?.tipo_formulario === "nota_reclamo" ||
+      tipo?.tipo_formulario === "visita_seguimiento" ||
+      tipo?.tipo_formulario === "reunion"
+    ) {
       setFechaEntrega(new Date().toISOString().split("T")[0]);
     }
   };
@@ -701,25 +713,36 @@ const ClienteDetalle = () => {
 
   const registrarActividad = async () => {
     if (!form.tipo) { toast.error("Seleccioná el tipo de gestión"); return; }
-    if (!resultadoId) { toast.error("Seleccioná un resultado"); return; }
-    if ((tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && !receptorNombre.trim()) {
-      toast.error("Ingresá el nombre de quien recibió la nota"); return;
+    if (!resultadoId) { toast.error("Seleccioná la tarea realizada"); return; }
+    if (!resultadoReal) { toast.error("Seleccioná el resultado de la gestión"); return; }
+    if (
+      (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+       tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion") &&
+      !receptorNombre.trim()
+    ) {
+      toast.error("Ingresá el nombre de quien estuvo presente"); return;
     }
 
     setGuardando(true);
 
     // Construir datos_extra según tipo de formulario
-    let datosExtra: Record<string, unknown> | null = null;
-    if (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") {
-      datosExtra = {
-        receptor_nombre: receptorNombre.trim(),
-        receptor_apellido: receptorApellido.trim() || null,
-        fecha_entrega: fechaEntrega || null,
-      };
+    const datosExtra: Record<string, unknown> = {};
+    if (
+      tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+      tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion"
+    ) {
+      datosExtra.receptor_nombre = receptorNombre.trim();
+      datosExtra.receptor_apellido = receptorApellido.trim() || null;
+      datosExtra.fecha_entrega = fechaEntrega || null;
+      datosExtra.acta_nro = actaNro.trim() || null;
     }
+    // Siempre guardar resultado real y score
+    datosExtra.resultado_real = resultadoReal || null;
+    datosExtra.score = resultadoRealObj?.score ?? null;
 
-    // Auto proxima_accion para sin_medios: hoy + 30 días
-    const proximaFinal = tipoFormulario === "sin_medios"
+    // Auto proxima_accion según resultado real
+    const autoAgenda = resultadoRealObj?.autoAgenda ?? false;
+    const proximaFinal = autoAgenda
       ? (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().split("T")[0]; })()
       : form.proxima_accion || null;
 
@@ -746,10 +769,15 @@ const ClienteDetalle = () => {
       proxima_accion: proximaFinal,
     }).eq("id", id);
 
-    toast.success("Actividad registrada en la bitácora");
+    if (autoAgenda) {
+      toast.success("Actividad registrada. Próxima visita agendada en 30 días ✅");
+    } else {
+      toast.success("Actividad registrada en la bitácora ✅");
+    }
     setForm({ tipo: "visita", notas: "", proxima_accion: "" });
     setResultadoId("");
-    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
+    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega(""); setActaNro("");
+    setResultadoReal("");
     setShowForm(false);
     await cargarGestiones();
     await cargarCliente();
@@ -1680,40 +1708,33 @@ const ClienteDetalle = () => {
                   </div>
                 </div>
 
-                {/* Resultado */}
+                {/* Tarea */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Resultado <span className="text-destructive">*</span></Label>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tarea <span className="text-destructive">*</span></Label>
                   <select
                     value={resultadoId}
                     onChange={(e) => handleResultadoChange(e.target.value)}
                     disabled={cargandoResultados}
                     className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
                   >
-                    <option value="">¿Cómo fue la gestión?</option>
+                    <option value="">Seleccioná la tarea realizada...</option>
                     {tiposResultadoFiltrados.map((r) => (
                       <option key={r.id} value={r.id}>{r.nombre}</option>
                     ))}
                   </select>
                 </div>
 
-                {/* Bloque especial: Sin Medios */}
-                {tipoFormulario === "sin_medios" && (
-                  <div className="rounded-xl border border-warning/40 bg-warning/5 p-3.5 flex items-start gap-2.5">
-                    <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-                    <p className="text-xs text-warning font-semibold">🔇 Sin Medios — se agendará revisita automáticamente en 30 días.</p>
-                  </div>
-                )}
-
-                {/* Bloque especial: Nota (nota_comercial y nota_reclamo) */}
-                {(tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && (
+                {/* Bloque especial: Nota / Visita Seguimiento / Reunión (con receptor) */}
+                {(tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+                  tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion") && (
                   <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
                     <p className="text-xs font-bold text-primary uppercase tracking-wider">
-                      📄 {resultadoSeleccionado?.nombre ?? "Nota"}
+                      📄 {resultadoSeleccionado?.nombre ?? "Datos del receptor"}
                     </p>
-                    <p className="text-[11px] text-muted-foreground">Datos de quien recibió la nota.</p>
+                    <p className="text-[11px] text-muted-foreground">Datos de quien recibió / estuvo presente.</p>
                     <div className="grid grid-cols-2 gap-2">
                       <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nombre receptor <span className="text-destructive">*</span></Label>
+                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nombre <span className="text-destructive">*</span></Label>
                         <Input placeholder="Nombre" value={receptorNombre} onChange={(e) => setReceptorNombre(e.target.value)} className="h-9 text-sm" />
                       </div>
                       <div className="space-y-1">
@@ -1721,18 +1742,54 @@ const ClienteDetalle = () => {
                         <Input placeholder="Apellido" value={receptorApellido} onChange={(e) => setReceptorApellido(e.target.value)} className="h-9 text-sm" />
                       </div>
                     </div>
-                    <div className="space-y-1">
-                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Fecha de entrega</Label>
-                      <Input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} className="h-9 text-sm" />
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Fecha</Label>
+                        <Input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Acta Nro.</Label>
+                        <Input placeholder="Nº de acta" value={actaNro} onChange={(e) => setActaNro(e.target.value)} className="h-9 text-sm" />
+                      </div>
                     </div>
                   </div>
                 )}
 
-                {/* Notas */}
+                {/* Bloque RESULTADO — aparece cuando se seleccionó una Tarea */}
+                {resultadoId && (
+                  <div className="rounded-xl border border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Target className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                        Resultado <span className="text-destructive">*</span>
+                      </p>
+                    </div>
+                    <select
+                      value={resultadoReal}
+                      onChange={(e) => setResultadoReal(e.target.value)}
+                      className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">¿Cuál fue el resultado?</option>
+                      {RESULTADOS_GESTION.map((r) => (
+                        <option key={r.key} value={r.key}>{r.label}</option>
+                      ))}
+                    </select>
+                    {resultadoRealObj?.autoAgenda && (
+                      <div className="flex items-center gap-2 rounded-lg bg-amber-100 dark:bg-amber-950/40 px-3 py-2">
+                        <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                        <p className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold">
+                          Se agendará revisita automáticamente en 30 días.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Notas / Resumen */}
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notas</Label>
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notas / Resumen</Label>
                   <Textarea
-                    placeholder="Detalles de la gestión, observaciones, acuerdos..."
+                    placeholder="Puntos clave conversados, acuerdos, observaciones..."
                     value={form.notas}
                     onChange={(e) => setForm((p) => ({ ...p, notas: e.target.value }))}
                     rows={3}
@@ -1740,8 +1797,8 @@ const ClienteDetalle = () => {
                   />
                 </div>
 
-                {/* Próxima acción — oculto para sin_medios (se calcula automáticamente) */}
-                {tipoFormulario !== "sin_medios" && (
+                {/* Próxima acción — oculta si el resultado auto-agenda */}
+                {!resultadoRealObj?.autoAgenda && (
                   <div className="space-y-1.5">
                     <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Próxima acción</Label>
                     <div className="relative">
@@ -1972,7 +2029,7 @@ const ClienteDetalle = () => {
                       </div>
                     )}
 
-                    {/* datos_extra: Nota Comercial */}
+                    {/* datos_extra: Nota Comercial / Receptor */}
                     {de && de.receptor_nombre && (
                       <div className="mt-2.5 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 space-y-0.5">
                         <p className="text-[10px] font-bold uppercase tracking-wider text-primary">📄 Receptor</p>
@@ -1981,9 +2038,22 @@ const ClienteDetalle = () => {
                         </p>
                         {de.fecha_entrega && (
                           <p className="text-xs text-muted-foreground">
-                            Entrega: {new Date(de.fecha_entrega + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
+                            Fecha: {new Date(de.fecha_entrega + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
                           </p>
                         )}
+                        {de.acta_nro && (
+                          <p className="text-xs text-muted-foreground">Acta Nro.: {de.acta_nro as string}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* datos_extra: Resultado real */}
+                    {de && de.resultado_real && (
+                      <div className="mt-2.5 rounded-lg border border-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-950/20 px-3 py-2 space-y-0.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">🎯 Resultado</p>
+                        <p className="text-xs text-foreground font-semibold">
+                          {RESULTADOS_GESTION.find((r) => r.key === de.resultado_real)?.label ?? (de.resultado_real as string)}
+                        </p>
                       </div>
                     )}
 

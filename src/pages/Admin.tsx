@@ -550,7 +550,7 @@ const Admin = () => {
             { key: "censo",       label: "CENSO",     icon: Building2,      adminOnly: false },
             { key: "catalogo",    label: "Categ.",    icon: Tag,            adminOnly: false },
             { key: "seguimiento", label: "Seguim.",   icon: BarChart2,      adminOnly: false },
-            { key: "resultados",  label: "Result.",   icon: ClipboardList,  adminOnly: false },
+            { key: "resultados",  label: "Tareas",    icon: ClipboardList,  adminOnly: false },
           ] as const).filter((t) => !t.adminOnly || isAdmin).map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -1125,15 +1125,15 @@ const Admin = () => {
         {seccion === "resultados" && (
           <>
             <div className="rounded-2xl border border-border bg-primary/5 p-4 space-y-1">
-              <p className="text-sm font-bold">Tipos de Resultado de Gestión</p>
+              <p className="text-sm font-bold">Tipos de Tarea</p>
               <p className="text-xs text-muted-foreground">
-                Configurá los resultados disponibles al registrar una gestión. Los que tienen formulario especial (📐 📄 🔇) activan campos adicionales en el formulario de registro.
+                Configurá las tareas disponibles al registrar una gestión. Las que tienen formulario especial (📄) activan campos adicionales (receptor, fecha, acta).
               </p>
             </div>
 
             {/* Agregar nuevo */}
             <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-3">
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Nuevo tipo de resultado</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Nueva tarea</p>
               <div className="flex gap-2">
                 <Input
                   placeholder="Ej: Interesado, Sin respuesta, Pagó..."
@@ -1165,7 +1165,7 @@ const Admin = () => {
             ) : (
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-bold">Resultados ({tiposResultado.length})</h2>
+                  <h2 className="text-sm font-bold">Tareas ({tiposResultado.length})</h2>
                   <p className="text-[11px] text-muted-foreground">
                     {tiposResultado.filter((t) => t.activo).length} activos
                   </p>
@@ -1257,7 +1257,7 @@ const Admin = () => {
                   ))}
                 </div>
                 <p className="text-[11px] text-muted-foreground px-1 pt-1">
-                  Desactivá resultados que ya no uses — no se elimina el historial. Los íconos 📐 📄 🔇 indican formularios especiales.
+                  Desactivá tareas que ya no uses — no se elimina el historial. El ícono 📄 indica tareas con formulario de receptor (nombre, fecha, acta).
                 </p>
               </div>
             )}

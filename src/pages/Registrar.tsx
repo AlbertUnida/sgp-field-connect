@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, MapPin, Phone, Car, Save, Calendar, Mail, Search, X, Loader2, MessageCircle, FileText, ImagePlus, Trash2, AlertCircle } from "lucide-react";
+import { Camera, MapPin, Phone, Car, Save, Calendar, Mail, Search, X, Loader2, MessageCircle, FileText, ImagePlus, Trash2, AlertCircle, Target } from "lucide-react";
+import { RESULTADOS_GESTION } from "@/lib/resultados-gestion";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,7 +24,7 @@ interface ClienteOpcion {
 interface TipoResultado {
   id: string;
   nombre: string;
-  tipo_formulario: string | null;
+  tipo_formulario: "sin_medios" | "nota_comercial" | "nota_reclamo" | "visita_seguimiento" | "reunion" | null;
   tipo_cartera: string;
   activo: boolean;
   orden: number;
@@ -66,10 +67,15 @@ const Registrar = () => {
   const [proxima, setProxima] = useState("");
   const [guardando, setGuardando] = useState(false);
 
-  // Campos especiales — Nota Info & Prop. Com.
+  // Campos especiales — Nota Info & formularios con receptor
   const [receptorNombre, setReceptorNombre] = useState("");
   const [receptorApellido, setReceptorApellido] = useState("");
   const [fechaEntrega, setFechaEntrega] = useState("");
+  const [actaNro, setActaNro] = useState("");
+
+  // Resultado real de la gestión
+  const [resultadoReal, setResultadoReal] = useState("");
+  const resultadoRealObj = RESULTADOS_GESTION.find((r) => r.key === resultadoReal) ?? null;
 
   // IDs de resultado ya completados para el cliente seleccionado (para filtro nota_reclamo)
   const [resultadosCompletadosCliente, setResultadosCompletadosCliente] = useState<Set<string>>(new Set());
@@ -219,13 +225,19 @@ const Registrar = () => {
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
-  // Limpiar campos especiales al cambiar resultado
+  // Limpiar campos especiales al cambiar tarea
   const handleResultadoChange = (id: string) => {
     setResultadoId(id);
-    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
-    // Auto-completar fecha de hoy para nota_comercial y nota_reclamo
+    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega(""); setActaNro("");
+    setResultadoReal("");
+    // Auto-completar fecha de hoy para tareas con receptor
     const tipo = tiposResultado.find((t) => t.id === id);
-    if (tipo?.tipo_formulario === "nota_comercial" || tipo?.tipo_formulario === "nota_reclamo") {
+    if (
+      tipo?.tipo_formulario === "nota_comercial" ||
+      tipo?.tipo_formulario === "nota_reclamo" ||
+      tipo?.tipo_formulario === "visita_seguimiento" ||
+      tipo?.tipo_formulario === "reunion"
+    ) {
       setFechaEntrega(new Date().toISOString().split("T")[0]);
     }
   };
@@ -321,11 +333,16 @@ const Registrar = () => {
     if (clienteSeleccionado.tipo_cliente === "evento" && !eventoSeleccionado) {
       toast.error("Seleccioná el evento para registrar la gestión"); return;
     }
-    if (!resultadoId) { toast.error("Seleccioná el resultado de la gestión"); return; }
+    if (!resultadoId) { toast.error("Seleccioná la tarea realizada"); return; }
+    if (!resultadoReal) { toast.error("Seleccioná el resultado de la gestión"); return; }
 
     // Validaciones de formularios especiales
-    if ((tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && !receptorNombre.trim()) {
-      toast.error("Ingresá el nombre de quien recibió la nota");
+    if (
+      (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+       tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion") &&
+      !receptorNombre.trim()
+    ) {
+      toast.error("Ingresá el nombre de quien recibió la nota / estuvo presente");
       return;
     }
 
@@ -365,15 +382,19 @@ const Registrar = () => {
     }
 
     // Construir datos_extra según tipo_formulario
-    let datosExtra: Record<string, string> | null = null;
-    if (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") {
-      datosExtra = {
-        receptor_nombre: receptorNombre.trim(),
-        receptor_apellido: receptorApellido.trim(),
-        fecha_entrega: fechaEntrega,
-      };
+    const datosExtra: Record<string, unknown> = {};
+    if (
+      tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+      tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion"
+    ) {
+      datosExtra.receptor_nombre = receptorNombre.trim();
+      datosExtra.receptor_apellido = receptorApellido.trim() || null;
+      datosExtra.fecha_entrega = fechaEntrega || null;
+      datosExtra.acta_nro = actaNro.trim() || null;
     }
-    // sin_medios no tiene datos extra
+    // Siempre guardar el resultado real y su score
+    datosExtra.resultado_real = resultadoReal || null;
+    datosExtra.score = resultadoRealObj?.score ?? null;
 
     const { error } = await supabase.from("gestiones").insert({
       cliente_id: parseInt(clienteSeleccionado.id),
@@ -397,7 +418,9 @@ const Registrar = () => {
     }
 
     // Actualizar ultima_gestion en el cliente
-    const proximaFinal = tipoFormulario === "sin_medios"
+    // auto-agenda 30 días si el resultado lo requiere
+    const autoAgenda = resultadoRealObj?.autoAgenda ?? false;
+    const proximaFinal = autoAgenda
       ? (() => {
           const d = new Date();
           d.setDate(d.getDate() + 30);
@@ -410,8 +433,8 @@ const Registrar = () => {
       proxima_accion: proximaFinal,
     }).eq("id", clienteSeleccionado.id);
 
-    if (tipoFormulario === "sin_medios") {
-      toast.success("Gestión guardada. Próxima visita programada en 30 días ✅");
+    if (autoAgenda) {
+      toast.success("Gestión guardada. Próxima visita agendada en 30 días ✅");
     } else {
       toast.success("Gestión registrada en la bitácora ✅");
     }
@@ -422,7 +445,8 @@ const Registrar = () => {
     setResultadoId("");
     setNotas("");
     setProxima("");
-    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega("");
+    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega(""); setActaNro("");
+    setResultadoReal("");
     setResultadosCompletadosCliente(new Set());
     quitarFoto();
     setGuardando(false);
@@ -579,15 +603,15 @@ const Registrar = () => {
             </div>
           )}
 
-          {/* Resultado */}
+          {/* Tarea */}
           <div className="space-y-1.5">
             <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Resultado <span className="text-destructive">*</span>
+              Tarea <span className="text-destructive">*</span>
             </Label>
             {cargandoResultados ? (
               <div className="flex items-center gap-2 h-12 px-3 rounded-xl border border-input bg-background text-muted-foreground text-sm">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span>Cargando resultados...</span>
+                <span>Cargando tareas...</span>
               </div>
             ) : (
               <select
@@ -595,7 +619,7 @@ const Registrar = () => {
                 onChange={(e) => handleResultadoChange(e.target.value)}
                 className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
-                <option value="">¿Cómo fue la gestión?</option>
+                <option value="">Seleccioná la tarea realizada...</option>
                 {tiposResultadoFiltrados.map((r) => (
                   <option key={r.id} value={r.id}>{r.nombre}</option>
                 ))}
@@ -603,33 +627,18 @@ const Registrar = () => {
             )}
           </div>
 
-          {/* ── Formulario especial: Sin Medios ── */}
-          {tipoFormulario === "sin_medios" && (
-            <div className="rounded-xl border border-warning/40 bg-warning/5 p-4 space-y-2">
-              <div className="flex items-start gap-2">
-                <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs font-bold text-warning">🔇 Sin Medios — revisita en 30 días</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Se programará automáticamente una próxima acción en 30 días para este cliente.
-                    El campo "Próxima acción" será ignorado en este caso.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── Formulario especial: Nota (nota_comercial y nota_reclamo) ── */}
-          {(tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo") && (
+          {/* ── Formulario especial: Nota / Visita Seguimiento / Reunión (con receptor) ── */}
+          {(tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+            tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion") && (
             <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
               <p className="text-xs font-bold uppercase tracking-wider text-primary">
-                📄 {resultadoSeleccionado?.nombre ?? "Nota"}
+                📄 {resultadoSeleccionado?.nombre ?? "Datos del receptor"}
               </p>
-              <p className="text-[11px] text-muted-foreground">Datos de quien recibió la nota.</p>
+              <p className="text-[11px] text-muted-foreground">Datos de quien recibió / estuvo presente.</p>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <Label className="text-[10px] font-bold uppercase text-muted-foreground">
-                    Nombre receptor <span className="text-destructive">*</span>
+                    Nombre <span className="text-destructive">*</span>
                   </Label>
                   <Input
                     placeholder="Nombre"
@@ -648,26 +657,67 @@ const Registrar = () => {
                   />
                 </div>
               </div>
-              <div className="space-y-1">
-                <Label className="text-[10px] font-bold uppercase text-muted-foreground">Fecha de entrega</Label>
-                <div className="relative">
-                  <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Fecha</Label>
+                  <div className="relative">
+                    <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="date"
+                      value={fechaEntrega}
+                      onChange={(e) => setFechaEntrega(e.target.value)}
+                      className="h-10 pl-10 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-bold uppercase text-muted-foreground">Acta Nro.</Label>
                   <Input
-                    type="date"
-                    value={fechaEntrega}
-                    onChange={(e) => setFechaEntrega(e.target.value)}
-                    className="h-10 pl-10 text-sm"
+                    placeholder="Nº de acta"
+                    value={actaNro}
+                    onChange={(e) => setActaNro(e.target.value)}
+                    className="h-10 text-sm"
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* Notas */}
+          {/* ── Bloque RESULTADO — aparece cuando se seleccionó una Tarea ── */}
+          {resultadoId && (
+            <div className="rounded-xl border border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Target className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                  Resultado <span className="text-destructive">*</span>
+                </p>
+              </div>
+              <select
+                value={resultadoReal}
+                onChange={(e) => setResultadoReal(e.target.value)}
+                className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+              >
+                <option value="">¿Cuál fue el resultado?</option>
+                {RESULTADOS_GESTION.map((r) => (
+                  <option key={r.key} value={r.key}>{r.label}</option>
+                ))}
+              </select>
+              {resultadoRealObj?.autoAgenda && (
+                <div className="flex items-center gap-2 rounded-lg bg-amber-100 dark:bg-amber-950/40 px-3 py-2">
+                  <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold">
+                    Se agendará revisita automáticamente en 30 días.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Notas / Resumen */}
           <div className="space-y-1.5">
-            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notas</Label>
+            <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notas / Resumen</Label>
             <Textarea
-              placeholder="Detalles de la gestión, acuerdos, observaciones..."
+              placeholder="Puntos clave conversados, acuerdos, observaciones..."
               value={notas}
               onChange={(e) => setNotas(e.target.value)}
               rows={3}
@@ -675,8 +725,8 @@ const Registrar = () => {
             />
           </div>
 
-          {/* Próxima acción — oculta para sin_medios (se auto-asigna) */}
-          {tipoFormulario !== "sin_medios" && (
+          {/* Próxima acción — oculta si el resultado auto-agenda */}
+          {!resultadoRealObj?.autoAgenda && (
             <div className="space-y-1.5">
               <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Próxima acción</Label>
               <div className="relative">
