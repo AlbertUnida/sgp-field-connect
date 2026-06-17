@@ -26,7 +26,8 @@ const Perfil = () => {
   const [telefono, setTelefono] = useState("");
   const [guardandoDatos, setGuardandoDatos] = useState(false);
 
-  // ── Contraseña ──
+  // ── Secciones colapsables ──
+  const [showDatosSection, setShowDatosSection] = useState(true);
   const [showPassSection, setShowPassSection] = useState(false);
   const [nuevaPass, setNuevaPass] = useState("");
   const [confirmarPass, setConfirmarPass] = useState("");
@@ -156,57 +157,70 @@ const Perfil = () => {
           </div>
         </section>
 
-        {/* ── Datos personales ── */}
-        <section className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-bold">Datos personales</h2>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Nombre <span className="text-destructive">*</span></Label>
-            <Input
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              placeholder="Tu nombre"
-              className="h-11"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Apellido</Label>
-            <Input
-              value={apellido}
-              onChange={(e) => setApellido(e.target.value)}
-              placeholder="Tu apellido"
-              className="h-11"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Teléfono</Label>
-            <Input
-              value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
-              placeholder="+595 981 123-456"
-              type="tel"
-              className="h-11"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-muted-foreground">Email (no editable)</Label>
-            <Input value={user?.email ?? ""} disabled className="h-11 opacity-60" />
-          </div>
-
-          <Button
-            onClick={guardarDatos}
-            disabled={guardandoDatos}
-            className="w-full h-11 gap-2"
+        {/* ── Datos personales (colapsable) ── */}
+        <section className="rounded-2xl border border-border bg-card shadow-card overflow-hidden">
+          <button
+            onClick={() => setShowDatosSection((v) => !v)}
+            className="flex w-full items-center justify-between p-4 text-left"
           >
-            {guardandoDatos ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {guardandoDatos ? "Guardando..." : "Guardar datos"}
-          </Button>
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-primary" />
+              <span className="text-sm font-bold">Datos personales</span>
+            </div>
+            {showDatosSection
+              ? <ChevronUp className="h-4 w-4 text-muted-foreground" />
+              : <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            }
+          </button>
+
+          {showDatosSection && (
+            <div className="border-t border-border px-4 pb-4 pt-4 space-y-4">
+              <div className="space-y-1.5">
+                <Label>Nombre <span className="text-destructive">*</span></Label>
+                <Input
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  placeholder="Tu nombre"
+                  className="h-11"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Apellido</Label>
+                <Input
+                  value={apellido}
+                  onChange={(e) => setApellido(e.target.value)}
+                  placeholder="Tu apellido"
+                  className="h-11"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Teléfono</Label>
+                <Input
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value)}
+                  placeholder="+595 981 123-456"
+                  type="tel"
+                  className="h-11"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground">Email (no editable)</Label>
+                <Input value={user?.email ?? ""} disabled className="h-11 opacity-60" />
+              </div>
+
+              <Button
+                onClick={guardarDatos}
+                disabled={guardandoDatos}
+                className="w-full h-11 gap-2"
+              >
+                {guardandoDatos ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                {guardandoDatos ? "Guardando..." : "Guardar datos"}
+              </Button>
+            </div>
+          )}
         </section>
 
         {/* ── Cambiar contraseña (colapsable) ── */}
