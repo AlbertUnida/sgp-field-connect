@@ -20,6 +20,7 @@ import EventoDetalle from "./pages/EventoDetalle";
 import Alertas from "./pages/Alertas";
 import Perfil from "./pages/Perfil";
 import Cobros from "./pages/Cobros";
+import Scoring from "./pages/Scoring";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -83,6 +84,7 @@ const AppRoutes = () => (
       <Route path="alertas" element={<Alertas />} />
       <Route path="perfil" element={<Perfil />} />
       <Route path="cobros" element={<Cobros />} />
+      <Route path="scoring" element={<Scoring />} />
     </Route>
     <Route path="/index" element={<Navigate to="/" replace />} />
     <Route path="*" element={<NotFound />} />

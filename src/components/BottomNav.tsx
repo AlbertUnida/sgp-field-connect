@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Home, Users, Plus, BarChart3, Settings, UserPlus, ClipboardList, X, Receipt } from "lucide-react";
+import { Home, Users, Plus, BarChart3, Settings, UserPlus, ClipboardList, X, Receipt, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProfile } from "@/hooks/useProfile";
 
@@ -15,9 +15,9 @@ export const BottomNav = () => {
   const navigate = useNavigate();
   const [menuAbierto, setMenuAbierto] = useState(false);
 
-  // Admin y supervisor ven el acceso al panel (admin ve todo; supervisor solo CENSO)
+  // Admin y supervisor ven Scoring y Admin
   const tabs = canManage
-    ? [...baseTabs, { to: "/app/admin", label: "Admin", icon: Settings }]
+    ? [...baseTabs, { to: "/app/scoring", label: "Scoring", icon: TrendingUp }, { to: "/app/admin", label: "Admin", icon: Settings }]
     : baseTabs;
 
   return (
