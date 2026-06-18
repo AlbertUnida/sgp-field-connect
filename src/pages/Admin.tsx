@@ -166,8 +166,7 @@ const Admin = () => {
   // ─── EJECUTIVOS ───────────────────────────────────────
   const cargarEjecutivos = async () => {
     setLoading(true);
-    // Usamos RPC con SECURITY DEFINER para que supervisores también puedan leer todos los perfiles
-    const { data: profiles } = await supabase.rpc("get_all_profiles");
+    const { data: profiles } = await supabase.from("profiles").select("*").order("nombre");
     const { data: metasData } = await supabase.from("metas").select("ejecutivo_id, monto_meta")
       .eq("mes", MES_ACTUAL).eq("anio", ANIO_ACTUAL);
     const metasMap: Record<string, number> = {};
