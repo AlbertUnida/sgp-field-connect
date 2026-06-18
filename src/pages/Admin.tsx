@@ -64,6 +64,7 @@ interface TipoResultado {
   tipo_formulario: string | null;
   activo: boolean;
   orden: number;
+  tipo_cartera: string;   // 'ambos' | 'local' | 'evento'
 }
 
 interface SeguimientoEj {
@@ -574,6 +575,19 @@ const Admin = () => {
       .update({ activo: !t.activo }).eq("id", t.id);
     if (!error) cargarResultados();
   };
+
+  const actualizarCartera = async (id: string, valor: string) => {
+    const { error } = await supabase.from("tipos_resultado")
+      .update({ tipo_cartera: valor }).eq("id", id);
+    if (error) { toast.error("Error: " + error.message); }
+    else { cargarResultados(); }
+  };
+
+  const CARTERA_OPTIONS: { value: string; label: string; color: string }[] = [
+    { value: "ambos",  label: "Ambas",  color: "bg-secondary text-foreground border-border" },
+    { value: "local",  label: "Local",  color: "bg-primary/10 text-primary border-primary/30" },
+    { value: "evento", label: "Evento", color: "bg-accent/10 text-accent-foreground border-accent/40" },
+  ];
 
   const FORMULARIO_LABEL: Record<string, string> = {
     medicion_incognito: "📐 Medición de Incógnito",
@@ -1242,13 +1256,34 @@ const Admin = () => {
                               className="h-9 text-sm"
                             />
                           ) : (
-                            <div>
+                            <div className="space-y-1.5">
                               <p className="font-semibold text-sm leading-tight">{t.nombre}</p>
                               {t.tipo_formulario && (
-                                <p className="text-[11px] text-primary font-semibold mt-0.5">
+                                <p className="text-[11px] text-primary font-semibold">
                                   {FORMULARIO_LABEL[t.tipo_formulario] ?? t.tipo_formulario}
                                 </p>
                               )}
+                              {/* Selector de cartera */}
+                              <div className="flex gap-1">
+                                {CARTERA_OPTIONS.map((opt) => {
+                                  const isSelected = (t.tipo_cartera ?? "ambos") === opt.value;
+                                  return (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      onClick={() => actualizarCartera(t.id, opt.value)}
+                                      className={cn(
+                                        "rounded-md border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide transition-smooth",
+                                        isSelected
+                                          ? opt.color + " opacity-100"
+                                          : "border-transparent bg-transparent text-muted-foreground opacity-50 hover:opacity-75"
+                                      )}
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
                             </div>
                           )}
                         </div>
