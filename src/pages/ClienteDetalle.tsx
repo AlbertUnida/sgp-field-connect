@@ -2253,4 +2253,7 @@ const InfoRow = ({ icon, label, value, valueClass }: {
       <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className={cn("text-sm break-words", valueClass)}>{value}</p>
     </div>
-  <
+  </div>
+);
+
+export default ClienteDetalle;
