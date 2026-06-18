@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, Trophy, Users, Loader2, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { TrendingUp, TrendingDown, Trophy, Users, Loader2, ChevronLeft, ChevronRight, Download, CalendarDays } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { formatPYG } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
@@ -25,6 +25,18 @@ interface InstanciaCount {
   count: number;
 }
 
+interface EventoMes {
+  id: string;
+  numero_evento: number;
+  nombre_evento: string | null;
+  fecha_evento: string | null;
+  tipo_evento: string | null;
+  tarifa_evento: number | null;
+  estado: string;
+  ejecutivo: { nombre: string; apellido: string } | null;
+  cliente: { nombre_comercial: string } | null;
+}
+
 const INSTANCIA_CONFIG: Record<string, { label: string; color: string }> = {
   CENSO:      { label: "Censo",      color: "#6b7280" },
   COMERCIAL:  { label: "Comercial",  color: "#3b82f6" },
@@ -41,6 +53,7 @@ const Reportes = () => {
   const [loading, setLoading] = useState(true);
   const [ejecutivos, setEjecutivos] = useState<EjecutivoStats[]>([]);
   const [embudo, setEmbudo] = useState<InstanciaCount[]>([]);
+  const [eventosMes, setEventosMes] = useState<EventoMes[]>([]);
 
   const mesActual = now.getMonth() + 1;
   const anioActual = now.getFullYear();
@@ -145,6 +158,15 @@ const Reportes = () => {
     });
     setEmbudo(Object.entries(counts).map(([instancia, count]) => ({ instancia, count })));
 
+    // Eventos del mes
+    const { data: eventosData } = await supabase
+      .from("eventos_agenda")
+      .select("id, numero_evento, nombre_evento, fecha_evento, tipo_evento, tarifa_evento, estado, ejecutivo:ejecutivo_id(nombre, apellido), cliente:cliente_id(nombre_comercial)")
+      .gte("fecha_evento", primerDia)
+      .lt("fecha_evento", primerDiaSiguiente)
+      .order("fecha_evento");
+    setEventosMes((eventosData ?? []) as EventoMes[]);
+
     setLoading(false);
   };
 
@@ -168,6 +190,7 @@ const Reportes = () => {
       { data: cobrosData },
       { data: perfilesData },
       { data: carteraData },
+      { data: eventosExportData },
     ] = await Promise.all([
       // Gestiones del período (visita, llamada, email, whatsapp)
       supabase
@@ -202,6 +225,14 @@ const Reportes = () => {
         .select("ejecutivo_id")
         .eq("activo", true)
         .not("ejecutivo_id", "is", null),
+
+      // Eventos del período
+      supabase
+        .from("eventos_agenda")
+        .select("id, numero_evento, nombre_evento, fecha_evento, tipo_evento, tarifa_evento, estado, notas, ejecutivo:ejecutivo_id(nombre, apellido), cliente:cliente_id(nombre_comercial)")
+        .gte("fecha_evento", rango.desde)
+        .lt("fecha_evento", hastaExclusivo)
+        .order("fecha_evento"),
     ]);
 
     const getRubro = (c: any) =>
@@ -380,6 +411,44 @@ const Reportes = () => {
     ];
     XLSX.utils.book_append_sheet(wb, wsCobros, "Cobros");
 
+    // ── Hoja 4: Eventos del período ───────────────────────────────
+    // Mapa: evento_id → monto cobrado (cruzando con cobrosData)
+    const cobrosPorEvento: Record<string, number> = {};
+    (cobrosData ?? []).forEach((c: any) => {
+      if (!c.eventos_ids) return;
+      (c.eventos_ids as string[]).forEach((eid) => {
+        cobrosPorEvento[eid] = (cobrosPorEvento[eid] ?? 0) + (c.monto ?? 0);
+      });
+    });
+
+    const totalTarifaEventos = (eventosExportData ?? []).reduce((s: number, ev: any) => s + (ev.tarifa_evento ?? 0), 0);
+    const totalCobradoEventos = (eventosExportData ?? []).reduce((s: number, ev: any) => s + (cobrosPorEvento[ev.id] ?? 0), 0);
+
+    const wsEventos = XLSX.utils.aoa_to_sheet([
+      ["Reporte de Eventos — SGP"],
+      [`Período: ${rango.label}`],
+      [`Total eventos: ${eventosExportData?.length ?? 0}   |   Tarifa estimada: ${totalTarifaEventos.toLocaleString("es-PY")}   |   Total cobrado: ${totalCobradoEventos.toLocaleString("es-PY")}`],
+      [],
+      ["N°", "Cliente", "Nombre del evento", "Tipo", "Fecha", "Ejecutivo", "Tarifa (Gs.)", "Cobrado (Gs.)", "Estado", "Notas"],
+      ...(eventosExportData ?? []).map((ev: any) => [
+        ev.numero_evento,
+        ev.cliente?.nombre_comercial ?? "—",
+        ev.nombre_evento ?? "—",
+        ev.tipo_evento ?? "—",
+        ev.fecha_evento?.slice(0, 10) ?? "",
+        nombreEjec(ev.ejecutivo),
+        ev.tarifa_evento ?? 0,
+        cobrosPorEvento[ev.id] ?? 0,
+        ev.estado ?? "",
+        ev.notas ?? "",
+      ]),
+    ]);
+    wsEventos["!cols"] = [
+      { wch: 6 }, { wch: 28 }, { wch: 28 }, { wch: 16 }, { wch: 14 },
+      { wch: 22 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 36 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsEventos, "Eventos");
+
     XLSX.writeFile(wb, `SGP_Gestion_${rango.label.replace(/\s/g, "_")}.xlsx`);
   };
 
@@ -490,6 +559,94 @@ const Reportes = () => {
               })}
             </div>
           </section>
+
+          {/* Eventos del mes */}
+          {eventosMes.length > 0 && (
+            <section className="rounded-2xl border border-border bg-card p-5 shadow-card">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <CalendarDays className="h-4 w-4 text-primary" />
+                  <h2 className="text-sm font-bold">Eventos del mes</h2>
+                </div>
+                <span className="text-[11px] font-semibold text-muted-foreground tabular-nums">
+                  {eventosMes.length} evento{eventosMes.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+
+              {/* Resumen por estado */}
+              {(() => {
+                const ESTADO_CFG: Record<string, { label: string; color: string }> = {
+                  prospecto:  { label: "Prospecto",  color: "bg-yellow-100 text-yellow-700" },
+                  confirmado: { label: "Confirmado", color: "bg-blue-100 text-blue-700" },
+                  cerrado:    { label: "Cerrado",    color: "bg-green-100 text-green-700" },
+                  cancelado:  { label: "Cancelado",  color: "bg-red-100 text-red-700" },
+                };
+                const countEstado: Record<string, number> = {};
+                let totalTarifa = 0;
+                eventosMes.forEach((ev) => {
+                  countEstado[ev.estado] = (countEstado[ev.estado] ?? 0) + 1;
+                  totalTarifa += ev.tarifa_evento ?? 0;
+                });
+                return (
+                  <>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {Object.entries(countEstado).map(([estado, cnt]) => {
+                        const cfg = ESTADO_CFG[estado] ?? { label: estado, color: "bg-secondary text-foreground" };
+                        return (
+                          <span key={estado} className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", cfg.color)}>
+                            {cfg.label}: {cnt}
+                          </span>
+                        );
+                      })}
+                    </div>
+                    {totalTarifa > 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Tarifa total estimada: <span className="font-bold text-foreground">{formatPYG(totalTarifa)}</span>
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+
+              {/* Lista de eventos */}
+              <div className="mt-4 space-y-2">
+                {eventosMes.map((ev) => {
+                  const ESTADO_CFG: Record<string, { label: string; color: string }> = {
+                    prospecto:  { label: "Prospecto",  color: "bg-yellow-100 text-yellow-700" },
+                    confirmado: { label: "Confirmado", color: "bg-blue-100 text-blue-700" },
+                    cerrado:    { label: "Cerrado",    color: "bg-green-100 text-green-700" },
+                    cancelado:  { label: "Cancelado",  color: "bg-red-100 text-red-700" },
+                  };
+                  const cfg = ESTADO_CFG[ev.estado] ?? { label: ev.estado, color: "bg-secondary text-foreground" };
+                  return (
+                    <div key={ev.id} className="flex items-start justify-between gap-3 rounded-xl border border-border px-3 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold truncate">
+                          #{ev.numero_evento} · {ev.cliente?.nombre_comercial ?? "—"}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground truncate">
+                          {ev.nombre_evento ?? ev.tipo_evento ?? "Sin nombre"} · {ev.fecha_evento?.slice(0, 10) ?? "—"}
+                        </p>
+                        {ev.ejecutivo && (
+                          <p className="text-[10px] text-muted-foreground/70">
+                            {ev.ejecutivo.nombre} {ev.ejecutivo.apellido ?? ""}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", cfg.color)}>
+                          {cfg.label}
+                        </span>
+                        {(ev.tarifa_evento ?? 0) > 0 && (
+                          <span className="text-[11px] font-semibold tabular-nums">{formatPYG(ev.tarifa_evento!)}</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
 
           {/* Performance por ejecutivo */}
           <section>

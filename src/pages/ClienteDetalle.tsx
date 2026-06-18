@@ -404,7 +404,7 @@ const ClienteDetalle = () => {
       .select("id, instancia_anterior, instancia_nueva, created_at, ejecutivo:ejecutivo_id(nombre, apellido)")
       .eq("cliente_id", id)
       .order("created_at", { ascending: true });
-    setHistorial(data ?? []);
+    setHistorial((data ?? []) as HistorialInstancia[]);
   };
 
   const cargarCobros = async () => {
@@ -440,7 +440,7 @@ const ClienteDetalle = () => {
       .eq("cliente_id", id)
       .order("created_at", { ascending: false });
 
-    setGestiones(data ?? []);
+    setGestiones((data ?? []) as Gestion[]);
   };
 
   const asignarEjecutivo = async () => {
@@ -599,31 +599,15 @@ const ClienteDetalle = () => {
 
     if (error) { toast.error("Error al registrar cobro: " + error.message); setGuardandoCobroEv(false); return; }
 
-    // Calcular fecha_vencimiento
-    const { data: rubroInfo } = await supabase
-      .from("clientes")
-      .select("rubro_rel:rubro_id(dias_vigencia)")
-      .eq("id", id)
-      .single();
-    const diasVigencia = (rubroInfo?.rubro_rel as any)?.dias_vigencia ?? 30;
-    const fechaBase = new Date(cobroEv.fecha_cobro);
-    fechaBase.setDate(fechaBase.getDate() + diasVigencia);
-    const fechaVencimiento = fechaBase.toISOString().split("T")[0];
+    // Marcar los eventos cobrados como "cerrado"
+    await supabase
+      .from("eventos_agenda")
+      .update({ estado: "cerrado" })
+      .in("id", eventosSelArr);
 
-    const instanciaAnterior = cliente!.instancia ?? "COMERCIAL";
-    await supabase.from("clientes")
-      .update({ instancia: "COBRANZAS", fecha_vencimiento: fechaVencimiento })
-      .eq("id", id);
+    // El cliente de eventos siempre queda en COMERCIAL — no se mueve a COBRANZAS
 
-    await supabase.from("historial_instancias").insert({
-      cliente_id: parseInt(id!),
-      instancia_anterior: instanciaAnterior,
-      instancia_nueva: "COBRANZAS",
-      ejecutivo_id: user!.id,
-      notas: `Cobro de eventos: ${eventosNombres}`,
-    });
-
-    toast.success(`✅ Cobro de ${eventosSeleccionados.size} evento(s) registrado — cliente pasa a COBRANZAS`);
+    toast.success(`✅ Cobro de ${eventosSeleccionados.size} evento(s) registrado — ${eventosNombres}`);
     setEventosSeleccionados(new Set());
     setShowCobroEventos(false);
     setModoSeleccion(false);
@@ -2269,7 +2253,4 @@ const InfoRow = ({ icon, label, value, valueClass }: {
       <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className={cn("text-sm break-words", valueClass)}>{value}</p>
     </div>
-  </div>
-);
-
-export default ClienteDetalle;
+  <
