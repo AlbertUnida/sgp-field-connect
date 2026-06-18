@@ -363,7 +363,7 @@ const ClienteDetalle = () => {
       .eq("activo", true)
       .order("nombre")
       .then(({ data }) => setEjecutivos(data ?? []));
-  }, [isAdmin]);
+  }, [canManage]);
 
   const cargarCliente = async () => {
     const { data, error } = await supabase
