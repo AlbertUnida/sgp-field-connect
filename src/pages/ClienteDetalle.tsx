@@ -892,8 +892,8 @@ const ClienteDetalle = () => {
 
       <div className="space-y-4 px-4 pt-4 pb-8">
 
-        {/* Banner para ejecutivo creador: cliente en CENSO pendiente de asignación */}
-        {esCreadorCenso && (
+        {/* Banner para ejecutivo creador: cliente en CENSO pendiente de asignación — solo locales */}
+        {esCreadorCenso && cliente.tipo_cliente !== "evento" && (
           <section className="rounded-2xl border border-amber-300 bg-amber-50 p-4 space-y-2 dark:bg-amber-950/30 dark:border-amber-700">
             <p className="text-sm font-bold text-amber-800 dark:text-amber-300">⏳ Pendiente de asignación</p>
             <p className="text-xs text-amber-700 dark:text-amber-400">
@@ -1331,7 +1331,7 @@ const ClienteDetalle = () => {
         )}
 
         {/* Registrar nueva actividad */}
-        {esPropio && instancia === "CENSO" && (
+        {esPropio && instancia === "CENSO" && cliente.tipo_cliente !== "evento" && (
           <section className="rounded-2xl border border-border bg-card p-4 text-center space-y-1">
             <p className="text-sm font-semibold text-muted-foreground">Sin gestión disponible</p>
             <p className="text-xs text-muted-foreground">

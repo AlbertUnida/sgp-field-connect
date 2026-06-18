@@ -97,7 +97,7 @@ const NuevoCliente = () => {
       // Campos del venue (null si es local)
       nombre_salon: form.tipo_cliente === "evento" ? form.nombre_salon.trim() || null : null,
       capacidad: form.tipo_cliente === "evento" && form.capacidad ? parseInt(form.capacidad.replace(/\D/g, "")) || null : null,
-      instancia: "CENSO",
+      instancia: form.tipo_cliente === "evento" ? "COMERCIAL" : "CENSO",
       estado: "activo",
       activo: true,
       // Locales: quedan sin asignar hasta que supervisor asigne
@@ -233,11 +233,13 @@ const NuevoCliente = () => {
           <Campo label="Calle secundaria" placeholder="Esq. Brasil" value={form.calle_secundaria} onChange={(v) => set("calle_secundaria", v)} />
         </div>
 
-        {/* Monto */}
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Licencia</p>
-          <Campo label="Monto estimado (Gs.)" placeholder="500000" value={form.monto_licencia} onChange={(v) => set("monto_licencia", v)} type="number" />
-        </div>
+        {/* Monto — solo para locales permanentes */}
+        {form.tipo_cliente === "local" && (
+          <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
+            <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Licencia</p>
+            <Campo label="Monto estimado (Gs.)" placeholder="500000" value={form.monto_licencia} onChange={(v) => set("monto_licencia", v)} type="number" />
+          </div>
+        )}
 
         {/* Info según tipo */}
         <div className={cn(
