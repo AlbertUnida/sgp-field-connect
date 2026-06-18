@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Eye, EyeOff, Music2, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Music2, ArrowRight, ShieldCheck, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,15 +12,19 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // ── Paso 2: verificación MFA ──
+  const [mfaStep, setMfaStep] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaFactorId, setMfaFactorId] = useState("");
+  const [mfaChallengeId, setMfaChallengeId] = useState("");
+
   const navigate = useNavigate();
 
+  // ── Paso 1: email + contraseña ──
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email || !password) {
-      toast.error("Ingresá email y contraseña");
-      return;
-    }
-
+    if (!email || !password) { toast.error("Ingresá email y contraseña"); return; }
     setLoading(true);
 
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -29,10 +33,58 @@ const Login = () => {
       if (error.message.includes("Invalid login credentials")) {
         toast.error("Email o contraseña incorrectos");
       } else if (error.message.includes("Email not confirmed")) {
-        toast.error("Confirmá tu email antes de ingresar");
+        toast.error("Confirmá tu email antes de ingresar. Revisá tu bandeja de entrada.");
       } else {
-        toast.error("Error al ingresar. Intentá de nuevo.");
+        toast.error("Error al ingresar: " + error.message);
       }
+      setLoading(false);
+      return;
+    }
+
+    // Verificar si el usuario tiene MFA habilitado
+    const { data: factors } = await supabase.auth.mfa.listFactors();
+    const totpFactors = factors?.totp?.filter((f) => f.status === "verified") ?? [];
+
+    if (totpFactors.length > 0) {
+      // Tiene 2FA → iniciar challenge
+      const factor = totpFactors[0];
+      const { data: challenge, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: factor.id,
+      });
+
+      if (challengeError || !challenge) {
+        toast.error("Error al iniciar verificación 2FA: " + challengeError?.message);
+        setLoading(false);
+        return;
+      }
+
+      setMfaFactorId(factor.id);
+      setMfaChallengeId(challenge.id);
+      setMfaStep(true);
+      setLoading(false);
+      return;
+    }
+
+    // Sin 2FA → entrar directo
+    toast.success("¡Bienvenido a SGP Campo!");
+    navigate("/app");
+  };
+
+  // ── Paso 2: verificar código TOTP ──
+  const handleMfaVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (mfaCode.length !== 6) { toast.error("El código tiene 6 dígitos"); return; }
+    setLoading(true);
+
+    const { error } = await supabase.auth.mfa.verify({
+      factorId: mfaFactorId,
+      challengeId: mfaChallengeId,
+      code: mfaCode.trim(),
+    });
+
+    if (error) {
+      toast.error("Código incorrecto o expirado. Intentá de nuevo.");
+      setMfaCode("");
       setLoading(false);
       return;
     }
@@ -43,7 +95,7 @@ const Login = () => {
 
   return (
     <div className="relative flex min-h-screen flex-col gradient-hero text-primary-foreground">
-      {/* decorativo */}
+      {/* Decorativo */}
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
         <div className="absolute -bottom-32 -left-20 h-72 w-72 rounded-full bg-primary-glow/40 blur-3xl" />
@@ -66,77 +118,129 @@ const Login = () => {
           </p>
         </div>
 
-        {/* Formulario */}
-        <form
-          onSubmit={handleSubmit}
-          className="animate-scale-in rounded-3xl bg-card p-6 text-card-foreground shadow-elevated"
-        >
-          <h2 className="text-xl font-bold">Iniciar sesión</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Accedé con tu cuenta corporativa SGP.</p>
+        {/* ── PASO 1: email + contraseña ── */}
+        {!mfaStep && (
+          <form
+            onSubmit={handleSubmit}
+            className="animate-scale-in rounded-3xl bg-card p-6 text-card-foreground shadow-elevated"
+          >
+            <h2 className="text-xl font-bold">Iniciar sesión</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Accedé con tu cuenta corporativa SGP.</p>
 
-          <div className="mt-6 space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Correo electrónico</Label>
+            <div className="mt-6 space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="email">Correo electrónico</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  placeholder="ejecutivo@sgp.org.py"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="h-12"
+                  disabled={loading}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Contraseña</Label>
+                  <Link to="/forgot-password" className="text-xs font-semibold text-primary hover:underline">
+                    ¿Olvidaste?
+                  </Link>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPwd ? "text" : "password"}
+                    autoComplete="current-password"
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="h-12 pr-12"
+                    disabled={loading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPwd((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    aria-label={showPwd ? "Ocultar contraseña" : "Mostrar contraseña"}
+                  >
+                    {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <Button
+              type="submit"
+              disabled={loading}
+              className="mt-6 h-12 w-full gap-2 text-base font-semibold"
+            >
+              {loading ? (
+                <><Loader2 className="h-4 w-4 animate-spin" />Ingresando...</>
+              ) : (
+                <>Ingresar <ArrowRight className="h-4 w-4" /></>
+              )}
+            </Button>
+          </form>
+        )}
+
+        {/* ── PASO 2: código 2FA ── */}
+        {mfaStep && (
+          <form
+            onSubmit={handleMfaVerify}
+            className="animate-scale-in rounded-3xl bg-card p-6 text-card-foreground shadow-elevated"
+          >
+            <div className="flex items-center gap-3 mb-1">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                <ShieldCheck className="h-5 w-5 text-primary" />
+              </div>
+              <h2 className="text-xl font-bold">Verificación 2FA</h2>
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Abrí tu app autenticadora (Google Authenticator, Authy) e ingresá el código de 6 dígitos.
+            </p>
+
+            <div className="mt-6 space-y-1.5">
+              <Label htmlFor="mfa-code">Código de verificación</Label>
               <Input
-                id="email"
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                placeholder="ejecutivo@sgp.org.py"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="h-12"
+                id="mfa-code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={6}
+                placeholder="000000"
+                value={mfaCode}
+                onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                className="h-14 text-center text-2xl font-mono tracking-[0.5em]"
+                autoFocus
                 disabled={loading}
               />
             </div>
 
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password">Contraseña</Label>
-                <Link to="/forgot-password" className="text-xs font-semibold text-primary hover:underline">
-                  ¿Olvidaste?
-                </Link>
-              </div>
-              <div className="relative">
-                <Input
-                  id="password"
-                  type={showPwd ? "text" : "password"}
-                  autoComplete="current-password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="h-12 pr-12"
-                  disabled={loading}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPwd((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  aria-label={showPwd ? "Ocultar contraseña" : "Mostrar contraseña"}
-                >
-                  {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-          </div>
+            <Button
+              type="submit"
+              disabled={loading || mfaCode.length !== 6}
+              className="mt-6 h-12 w-full gap-2 text-base font-semibold"
+            >
+              {loading ? (
+                <><Loader2 className="h-4 w-4 animate-spin" />Verificando...</>
+              ) : (
+                <>Verificar <ShieldCheck className="h-4 w-4" /></>
+              )}
+            </Button>
 
-          <Button
-            type="submit"
-            disabled={loading}
-            className="mt-6 h-12 w-full gap-2 text-base font-semibold"
-          >
-            {loading ? (
-              <>
-                <div className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                Ingresando...
-              </>
-            ) : (
-              <>
-                Ingresar <ArrowRight className="h-4 w-4" />
-              </>
-            )}
-          </Button>
-        </form>
+            <button
+              type="button"
+              onClick={() => { setMfaStep(false); setMfaCode(""); }}
+              className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground"
+            >
+              ← Volver al inicio de sesión
+            </button>
+          </form>
+        )}
 
         <p className="mt-auto py-8 text-center text-xs text-primary-foreground/60">
           © {new Date().getFullYear()} SGP · Sociedad de Gestión de Productores Fonográficos del Paraguay
