@@ -144,8 +144,12 @@ const ClienteDetalle = () => {
   const [eventosAgenda, setEventosAgenda] = useState<EventoAgenda[]>([]);
   const [loadingEventos, setLoadingEventos] = useState(false);
 
+  // Catálogo de eventos (cargado una sola vez cuando es cliente tipo evento)
+  const [rubrosEvento, setRubrosEvento] = useState<{ id: string; nombre: string }[]>([]);
+  const [tiposEvento, setTiposEvento] = useState<{ id: string; nombre: string }[]>([]);
+
   // Formulario inline de nuevo evento
-  const eventoFormVacio = { nombre_evento: "", fecha_evento: "", tipo_evento: "", tarifa_evento: "", notas: "" };
+  const eventoFormVacio = { rubro_evento_id: "", nombre_evento: "", fecha_evento: "", tipo_evento: "", tarifa_evento: "", notas: "" };
   const [showFormEvento, setShowFormEvento] = useState(false);
   const [formEvento, setFormEvento] = useState(eventoFormVacio);
   const [guardandoEvento, setGuardandoEvento] = useState(false);
@@ -275,10 +279,15 @@ const ClienteDetalle = () => {
     cargarResultados();
   }, [id]);
 
-  // Cargar eventos cuando ya sabemos que es tipo "evento"
+  // Cargar eventos y catálogo cuando ya sabemos que es tipo "evento"
   useEffect(() => {
     if (cliente?.tipo_cliente === "evento") {
       cargarEventos();
+      // Cargar rubros y tipos de evento para el formulario
+      supabase.from("rubros_evento").select("id, nombre").eq("activo", true).order("nombre")
+        .then(({ data }) => setRubrosEvento(data ?? []));
+      supabase.from("tipos_evento").select("id, nombre").eq("activo", true).order("nombre")
+        .then(({ data }) => setTiposEvento(data ?? []));
     }
   }, [cliente?.tipo_cliente]);
 
@@ -294,6 +303,7 @@ const ClienteDetalle = () => {
   };
 
   const guardarEvento = async (abrirOtro: boolean) => {
+    if (!formEvento.rubro_evento_id) { toast.error("Seleccioná el rubro del evento"); return; }
     if (!formEvento.nombre_evento.trim()) { toast.error("El nombre del evento es obligatorio"); return; }
     if (!formEvento.fecha_evento) { toast.error("La fecha del evento es obligatoria"); return; }
     if (!formEvento.tipo_evento) { toast.error("Seleccioná el tipo de evento"); return; }
@@ -301,6 +311,7 @@ const ClienteDetalle = () => {
     setGuardandoEvento(true);
     const { error } = await supabase.from("eventos_agenda").insert({
       cliente_id: parseInt(id!),
+      rubro_evento_id: formEvento.rubro_evento_id,
       nombre_evento: formEvento.nombre_evento.trim(),
       fecha_evento: formEvento.fecha_evento,
       tipo_evento: formEvento.tipo_evento,
@@ -1375,6 +1386,21 @@ const ClienteDetalle = () => {
                   </button>
                 </div>
 
+                {/* Rubro — PRIMERO */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Rubro <span className="text-destructive">*</span></Label>
+                  <select
+                    value={formEvento.rubro_evento_id}
+                    onChange={(e) => setEv("rubro_evento_id", e.target.value)}
+                    className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">Seleccioná un rubro...</option>
+                    {rubrosEvento.map((r) => (
+                      <option key={r.id} value={r.id}>{r.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* Nombre */}
                 <div className="space-y-1.5">
                   <Label className="text-xs">Nombre del evento <span className="text-destructive">*</span></Label>
@@ -1405,12 +1431,9 @@ const ClienteDetalle = () => {
                       className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
                     >
                       <option value="">Tipo...</option>
-                      <option value="casamiento">Casamiento</option>
-                      <option value="quinceanos">Quinceaños</option>
-                      <option value="corporativo">Corporativo</option>
-                      <option value="social">Social / Privado</option>
-                      <option value="musical">Musical / Show</option>
-                      <option value="otro">Otro</option>
+                      {tiposEvento.map((t) => (
+                        <option key={t.id} value={t.nombre}>{t.nombre}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

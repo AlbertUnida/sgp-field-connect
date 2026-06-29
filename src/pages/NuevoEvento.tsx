@@ -10,17 +10,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
-interface Categoria { id: string; nombre: string; }
-interface Rubro { id: string; categoria_id: string; nombre: string; }
-
-const TIPOS_EVENTO = [
-  { value: "casamiento",  label: "Casamiento" },
-  { value: "quinceanos",  label: "Quinceaños" },
-  { value: "corporativo", label: "Corporativo" },
-  { value: "social",      label: "Social / Privado" },
-  { value: "musical",     label: "Musical / Show" },
-  { value: "otro",        label: "Otro" },
-];
+interface RubroEvento { id: string; nombre: string; }
+interface TipoEvento  { id: string; nombre: string; }
 
 const NuevoEvento = () => {
   const { id: clienteId } = useParams();
@@ -29,17 +20,15 @@ const NuevoEvento = () => {
 
   const [clienteNombre, setClienteNombre] = useState("");
   const [guardando, setGuardando] = useState(false);
-  const [categorias, setCategorias] = useState<Categoria[]>([]);
-  const [rubros, setRubros] = useState<Rubro[]>([]);
-  const [rubrosFiltrados, setRubrosFiltrados] = useState<Rubro[]>([]);
+  const [rubrosEvento, setRubrosEvento] = useState<RubroEvento[]>([]);
+  const [tiposEvento, setTiposEvento] = useState<TipoEvento[]>([]);
 
   const [form, setForm] = useState({
+    rubro_evento_id: "",
     nombre_evento: "",
     fecha_evento: "",
     tipo_evento: "",
     tarifa_evento: "",
-    categoria_id: "",
-    rubro_id: "",
     nombre_salon: "",
     capacidad: "",
     notas: "",
@@ -56,20 +45,12 @@ const NuevoEvento = () => {
       .single()
       .then(({ data }) => setClienteNombre(data?.nombre_comercial ?? ""));
 
-    supabase.from("categorias").select("*").order("nombre").then(({ data }) => setCategorias(data ?? []));
-    supabase.from("rubros").select("*").order("nombre").then(({ data }) => setRubros(data ?? []));
+    supabase.from("rubros_evento").select("id, nombre").eq("activo", true).order("nombre").then(({ data }) => setRubrosEvento(data ?? []));
+    supabase.from("tipos_evento").select("id, nombre").eq("activo", true).order("nombre").then(({ data }) => setTiposEvento(data ?? []));
   }, [clienteId]);
 
-  useEffect(() => {
-    if (form.categoria_id) {
-      setRubrosFiltrados(rubros.filter((r) => r.categoria_id === form.categoria_id));
-      setForm((p) => ({ ...p, rubro_id: "" }));
-    } else {
-      setRubrosFiltrados([]);
-    }
-  }, [form.categoria_id, rubros]);
-
   const guardar = async () => {
+    if (!form.rubro_evento_id) { toast.error("Seleccioná el rubro del evento"); return; }
     if (!form.nombre_evento.trim()) { toast.error("El nombre del evento es obligatorio"); return; }
     if (!form.fecha_evento) { toast.error("La fecha del evento es obligatoria"); return; }
     if (!form.tipo_evento) { toast.error("Seleccioná el tipo de evento"); return; }
@@ -78,12 +59,11 @@ const NuevoEvento = () => {
 
     const { error } = await supabase.from("eventos_agenda").insert({
       cliente_id: parseInt(clienteId!),
+      rubro_evento_id: form.rubro_evento_id,
       nombre_evento: form.nombre_evento.trim(),
       fecha_evento: form.fecha_evento,
       tipo_evento: form.tipo_evento,
       tarifa_evento: form.tarifa_evento ? parseInt(form.tarifa_evento.replace(/\D/g, "")) : null,
-      categoria_id: form.categoria_id || null,
-      rubro_id: form.rubro_id || null,
       nombre_salon: form.nombre_salon.trim() || null,
       capacidad: form.capacidad ? parseInt(form.capacidad.replace(/\D/g, "")) || null : null,
       notas: form.notas.trim() || null,
@@ -141,8 +121,8 @@ const NuevoEvento = () => {
               className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
             >
               <option value="">Seleccioná un tipo...</option>
-              {TIPOS_EVENTO.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
+              {tiposEvento.map((t) => (
+                <option key={t.id} value={t.nombre}>{t.nombre}</option>
               ))}
             </select>
           </div>
@@ -161,31 +141,14 @@ const NuevoEvento = () => {
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Clasificación</p>
 
           <div className="space-y-1.5">
-            <Label>Categoría</Label>
+            <Label>Rubro <span className="text-destructive">*</span></Label>
             <select
-              value={form.categoria_id}
-              onChange={(e) => set("categoria_id", e.target.value)}
+              value={form.rubro_evento_id}
+              onChange={(e) => set("rubro_evento_id", e.target.value)}
               className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
             >
-              <option value="">Seleccioná una categoría...</option>
-              {categorias.map((c) => (
-                <option key={c.id} value={c.id}>{c.nombre}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label>Rubro</Label>
-            <select
-              value={form.rubro_id}
-              onChange={(e) => set("rubro_id", e.target.value)}
-              disabled={!form.categoria_id}
-              className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-50"
-            >
-              <option value="">
-                {form.categoria_id ? "Seleccioná un rubro..." : "Primero elegí una categoría"}
-              </option>
-              {rubrosFiltrados.map((r) => (
+              <option value="">Seleccioná un rubro...</option>
+              {rubrosEvento.map((r) => (
                 <option key={r.id} value={r.id}>{r.nombre}</option>
               ))}
             </select>
