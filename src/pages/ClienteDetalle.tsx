@@ -194,6 +194,7 @@ const ClienteDetalle = () => {
     direccion_evento: "",
     email_contacto: "",
     telefono_contacto: "",
+    referencia: "",
     notas: "",
   });
   const setCobEv = (k: string, v: string) => setCobroEv((p) => ({ ...p, [k]: v }));
@@ -617,6 +618,7 @@ const ClienteDetalle = () => {
       direccion_evento: cobroEv.direccion_evento || null,
       email_contacto: cobroEv.email_contacto || null,
       telefono_contacto: cobroEv.telefono_contacto || null,
+      referencia: cobroEv.referencia || null,
       eventos_ids: eventosSelArr,
       notas: cobroEv.notas || null,
     });
@@ -639,7 +641,7 @@ const ClienteDetalle = () => {
     setEventosSeleccionados(new Set());
     setShowCobroEventos(false);
     setModoSeleccion(false);
-    setCobroEv({ monto: "", metodo_pago: "efectivo", modalidad: "pago_unico", fecha_cobro: hoy, razon_social_factura: "", ruc_factura: "", lugar_evento: "", direccion_evento: "", email_contacto: "", telefono_contacto: "", notas: "" });
+    setCobroEv({ monto: "", metodo_pago: "efectivo", modalidad: "pago_unico", fecha_cobro: hoy, razon_social_factura: "", ruc_factura: "", lugar_evento: "", direccion_evento: "", email_contacto: "", telefono_contacto: "", referencia: "", notas: "" });
     await Promise.all([cargarCliente(), cargarCobros(), cargarHistorial()]);
     setGuardandoCobroEv(false);
   };
@@ -1764,6 +1766,21 @@ const ClienteDetalle = () => {
                       />
                     </div>
                   </div>
+
+                  {/* Nro. Comprobante — solo para transferencia, cheque, débito */}
+                  {["transferencia", "cheque", "debito"].includes(cobroEv.metodo_pago) && (
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                        Nro. de Comprobante <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        placeholder="Nro. de transferencia, cheque, etc."
+                        value={cobroEv.referencia}
+                        onChange={(e) => setCobEv("referencia", e.target.value)}
+                        className="h-11"
+                      />
+                    </div>
+                  )}
 
                   {/* Notas */}
                   <div className="space-y-1.5">
