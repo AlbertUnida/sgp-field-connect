@@ -149,7 +149,7 @@ const ClienteDetalle = () => {
   const [tiposEvento, setTiposEvento] = useState<{ id: string; nombre: string }[]>([]);
 
   // Formulario inline de nuevo evento
-  const eventoFormVacio = { rubro_evento_id: "", nombre_evento: "", fecha_evento: "", tipo_evento: "", tarifa_evento: "", notas: "" };
+  const eventoFormVacio = { rubro_evento_id: "", nombre_evento: "", fecha_evento: "", tipo_evento: "", tarifa_evento: "", nombre_salon: "", notas: "" };
   const [showFormEvento, setShowFormEvento] = useState(false);
   const [formEvento, setFormEvento] = useState(eventoFormVacio);
   const [guardandoEvento, setGuardandoEvento] = useState(false);
@@ -319,6 +319,7 @@ const ClienteDetalle = () => {
       fecha_evento: formEvento.fecha_evento,
       tipo_evento: formEvento.tipo_evento,
       tarifa_evento: formEvento.tarifa_evento ? parseInt(formEvento.tarifa_evento.replace(/\D/g, "")) : null,
+      nombre_salon: formEvento.nombre_salon.trim() || null,
       notas: formEvento.notas.trim() || null,
       estado: "prospecto",
       ejecutivo_id: user!.id,
@@ -578,7 +579,7 @@ const ClienteDetalle = () => {
       fecha_cobro: hoy,
       razon_social_factura: cliente?.razon_social ?? "",
       ruc_factura: cliente?.ruc ?? "",
-      lugar_evento: cliente?.direccion ?? "",
+      lugar_evento: cliente?.nombre_salon ?? cliente?.direccion ?? "",
       email_contacto: cliente?.email_cliente ?? "",
       telefono_contacto: cliente?.telefono ?? "",
       notas: "",
@@ -620,10 +621,14 @@ const ClienteDetalle = () => {
     if (error) { toast.error("Error al registrar cobro: " + error.message); setGuardandoCobroEv(false); return; }
 
     // Marcar los eventos cobrados como "cerrado"
-    await supabase
+    const { error: errUpdate } = await supabase
       .from("eventos_agenda")
       .update({ estado: "cerrado" })
       .in("id", eventosSelArr);
+
+    if (errUpdate) {
+      toast.error("Cobro registrado, pero no se pudieron cerrar los eventos: " + errUpdate.message);
+    }
 
     // El cliente de eventos siempre queda en COMERCIAL — no se mueve a COBRANZAS
 
@@ -631,7 +636,7 @@ const ClienteDetalle = () => {
     setEventosSeleccionados(new Set());
     setShowCobroEventos(false);
     setModoSeleccion(false);
-    setCobroEv({ monto: "", metodo_pago: "efectivo", modalidad: "pago_unico", fecha_cobro: hoy, razon_social_factura: "", ruc_factura: "", notas: "" });
+    setCobroEv({ monto: "", metodo_pago: "efectivo", modalidad: "pago_unico", fecha_cobro: hoy, razon_social_factura: "", ruc_factura: "", lugar_evento: "", email_contacto: "", telefono_contacto: "", notas: "" });
     await Promise.all([cargarCliente(), cargarCobros(), cargarHistorial()]);
     setGuardandoCobroEv(false);
   };
@@ -1371,7 +1376,10 @@ const ClienteDetalle = () => {
               </h2>
               {(esPropio || canManage) && !showFormEvento && !modoSeleccion && (
                 <button
-                  onClick={() => setShowFormEvento(true)}
+                  onClick={() => {
+                    setFormEvento({ ...eventoFormVacio, nombre_salon: cliente?.nombre_salon ?? "" });
+                    setShowFormEvento(true);
+                  }}
                   className="flex items-center gap-1.5 rounded-xl bg-primary px-3 py-1.5 text-[11px] font-bold text-primary-foreground active:scale-95 transition-smooth"
                 >
                   <Plus className="h-3.5 w-3.5" />
@@ -1455,6 +1463,17 @@ const ClienteDetalle = () => {
                     placeholder="500000"
                     value={formEvento.tarifa_evento}
                     onChange={(e) => setEv("tarifa_evento", e.target.value)}
+                    className="h-11"
+                  />
+                </div>
+
+                {/* Lugar del evento */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Lugar del evento</Label>
+                  <Input
+                    placeholder="Ej: Salón Los Pinos, Av. España 1234"
+                    value={formEvento.nombre_salon}
+                    onChange={(e) => setEv("nombre_salon", e.target.value)}
                     className="h-11"
                   />
                 </div>
@@ -1632,9 +1651,9 @@ const ClienteDetalle = () => {
                     <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">Lugar del evento</p>
                     <p className="text-[11px] text-muted-foreground">Pre-cargado del cliente. Editá si el evento es en otro lugar.</p>
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Dirección</Label>
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Lugar / Salón</Label>
                       <Input
-                        placeholder="Av. España 1234"
+                        placeholder="Ej: Salón Los Pinos, Av. España 1234"
                         value={cobroEv.lugar_evento}
                         onChange={(e) => setCobEv("lugar_evento", e.target.value)}
                         className="h-10 text-sm"

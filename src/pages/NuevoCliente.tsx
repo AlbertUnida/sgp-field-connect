@@ -96,7 +96,7 @@ const NuevoCliente = () => {
       rubro_id: form.tipo_cliente === "local" ? form.rubro_id : null,
       sub_rubro_id: form.tipo_cliente === "local" ? (form.sub_rubro_id || null) : null,
       tipo_cliente: form.tipo_cliente,
-      nombre_salon: null,
+      nombre_salon: form.tipo_cliente === "evento" ? form.nombre_salon.trim() || null : null,
       capacidad: null,
       instancia: form.tipo_cliente === "evento" ? "COMERCIAL" : "CENSO",
       estado: "activo",
@@ -205,14 +205,30 @@ const NuevoCliente = () => {
         </div>
         )}
 
-        {/* Datos del local */}
+        {/* Datos del local / venue */}
         <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
-          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Datos del local</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+            {form.tipo_cliente === "evento" ? "Datos del venue" : "Datos del local"}
+          </p>
 
-          <Campo label="Nombre del local / Evento" required placeholder="Bar Don Pedro" value={form.nombre_comercial} onChange={(v) => set("nombre_comercial", v)} />
+          <Campo
+            label={form.tipo_cliente === "evento" ? "Nombre del venue" : "Nombre del local"}
+            required
+            placeholder={form.tipo_cliente === "evento" ? "TALLEYRAND, LA FIESTA..." : "Bar Don Pedro"}
+            value={form.nombre_comercial}
+            onChange={(v) => set("nombre_comercial", v)}
+          />
           <Campo label="Razón Social" placeholder="Don Pedro SA" value={form.razon_social} onChange={(v) => set("razon_social", v)} />
           <Campo label="RUC" placeholder="80012345-6" value={form.ruc} onChange={(v) => set("ruc", v)} />
           <Campo label="Teléfono" placeholder="+595 981 123-456" value={form.telefono} onChange={(v) => set("telefono", v)} type="tel" />
+          {form.tipo_cliente === "evento" && (
+            <Campo
+              label="Lugar del evento"
+              placeholder="Salón Principal, Av. España 1234"
+              value={form.nombre_salon}
+              onChange={(v) => set("nombre_salon", v)}
+            />
+          )}
         </div>
 
 
