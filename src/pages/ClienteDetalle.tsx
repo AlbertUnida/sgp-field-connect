@@ -190,6 +190,9 @@ const ClienteDetalle = () => {
     fecha_cobro: hoy,
     razon_social_factura: "",
     ruc_factura: "",
+    lugar_evento: "",
+    email_contacto: "",
+    telefono_contacto: "",
     notas: "",
   });
   const setCobEv = (k: string, v: string) => setCobroEv((p) => ({ ...p, [k]: v }));
@@ -575,6 +578,9 @@ const ClienteDetalle = () => {
       fecha_cobro: hoy,
       razon_social_factura: cliente?.razon_social ?? "",
       ruc_factura: cliente?.ruc ?? "",
+      lugar_evento: cliente?.direccion ?? "",
+      email_contacto: cliente?.email_cliente ?? "",
+      telefono_contacto: cliente?.telefono ?? "",
       notas: "",
     });
     setShowCobroEventos(true);
@@ -604,6 +610,9 @@ const ClienteDetalle = () => {
       fecha_cobro: cobroEv.fecha_cobro,
       razon_social_factura: cobroEv.razon_social_factura || null,
       ruc_factura: cobroEv.ruc_factura || null,
+      lugar_evento: cobroEv.lugar_evento || null,
+      email_contacto: cobroEv.email_contacto || null,
+      telefono_contacto: cobroEv.telefono_contacto || null,
       eventos_ids: eventosSelArr,
       notas: cobroEv.notas || null,
     });
@@ -1616,6 +1625,41 @@ const ClienteDetalle = () => {
                         <span className="text-muted-foreground shrink-0 ml-2">{ev.tarifa_evento ? formatPYG(ev.tarifa_evento) : "—"}</span>
                       </div>
                     ))}
+                  </div>
+
+                  {/* Lugar del evento */}
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/50 dark:bg-blue-950/20 p-3 space-y-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">Lugar del evento</p>
+                    <p className="text-[11px] text-muted-foreground">Pre-cargado del cliente. Editá si el evento es en otro lugar.</p>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Dirección</Label>
+                      <Input
+                        placeholder="Av. España 1234"
+                        value={cobroEv.lugar_evento}
+                        onChange={(e) => setCobEv("lugar_evento", e.target.value)}
+                        className="h-10 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Correo electrónico</Label>
+                      <Input
+                        type="email"
+                        placeholder="contacto@ejemplo.com"
+                        value={cobroEv.email_contacto}
+                        onChange={(e) => setCobEv("email_contacto", e.target.value)}
+                        className="h-10 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Teléfono contacto</Label>
+                      <Input
+                        type="tel"
+                        placeholder="+595 981 123-456"
+                        value={cobroEv.telefono_contacto}
+                        onChange={(e) => setCobEv("telefono_contacto", e.target.value)}
+                        className="h-10 text-sm"
+                      />
+                    </div>
                   </div>
 
                   {/* Datos de facturación */}
