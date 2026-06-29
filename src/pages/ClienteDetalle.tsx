@@ -625,17 +625,17 @@ const ClienteDetalle = () => {
 
     if (error) { toast.error("Error al registrar cobro: " + error.message); setGuardandoCobroEv(false); return; }
 
-    // Marcar los eventos cobrados como "cerrado"
+    // Marcar los eventos cobrados como cerrado + moverlos a COBRANZAS
     const { error: errUpdate } = await supabase
       .from("eventos_agenda")
-      .update({ estado: "cerrado" })
+      .update({ estado: "cerrado", instancia: "COBRANZAS" })
       .in("id", eventosSelArr);
 
     if (errUpdate) {
       toast.error("Cobro registrado, pero no se pudieron cerrar los eventos: " + errUpdate.message);
     }
 
-    // El cliente de eventos siempre queda en COMERCIAL — no se mueve a COBRANZAS
+    // El cliente (venue) siempre queda en COMERCIAL — solo los eventos individuales pasan a COBRANZAS
 
     toast.success(`✅ Cobro de ${eventosSeleccionados.size} evento(s) registrado — ${eventosNombres}`);
     setEventosSeleccionados(new Set());

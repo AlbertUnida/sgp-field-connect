@@ -30,12 +30,26 @@ interface ClienteReal {
   lead_score: number | null;
 }
 
+interface EventoCobranza {
+  id: string;
+  numero_evento: number | null;
+  nombre_evento: string | null;
+  tipo_evento: string | null;
+  tarifa_evento: number | null;
+  fecha_evento: string | null;
+  cliente_id: number | null;
+  cliente_nombre: string | null;
+  ejecutivo_id: string | null;
+  ejecutivo_nombre: string | null;
+}
+
 const Clientes = () => {
   const { user } = useAuth();
   const { isAdmin, canManage } = useProfile();
   const [searchParams] = useSearchParams();
   const ejFilter = searchParams.get("ej"); // ejecutivo_id param for supervisor drill-down
   const [clientes, setClientes] = useState<ClienteReal[]>([]);
+  const [eventosCobranza, setEventosCobranza] = useState<EventoCobranza[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<string>("all");
@@ -73,12 +87,33 @@ const Clientes = () => {
       query = query.eq("ejecutivo_id", ejFilter);
     }
 
-    // Carga clientes y scores en paralelo
-    const [{ data, error }, { data: scoreRows }] = await Promise.all([
+    // Carga clientes, scores y eventos en COBRANZAS en paralelo
+    const [{ data, error }, { data: scoreRows }, { data: evData }] = await Promise.all([
       query,
       supabase.from("cliente_lead_scores").select("cliente_id, lead_score"),
+      supabase
+        .from("eventos_agenda")
+        .select("id, numero_evento, nombre_evento, tipo_evento, tarifa_evento, fecha_evento, cliente_id, ejecutivo_id, cliente:cliente_id(nombre_comercial), ejecutivo:ejecutivo_id(nombre, apellido)")
+        .eq("instancia", "COBRANZAS")
+        .order("fecha_evento", { ascending: false }),
     ]);
     if (error) console.error("Error cargando clientes:", error);
+
+    const mappedEventos = (evData ?? []).map((e: any) => ({
+      id: e.id,
+      numero_evento: e.numero_evento ?? null,
+      nombre_evento: e.nombre_evento ?? null,
+      tipo_evento: e.tipo_evento ?? null,
+      tarifa_evento: e.tarifa_evento ?? null,
+      fecha_evento: e.fecha_evento ?? null,
+      cliente_id: e.cliente_id ?? null,
+      cliente_nombre: e.cliente?.nombre_comercial ?? null,
+      ejecutivo_id: e.ejecutivo_id ?? null,
+      ejecutivo_nombre: e.ejecutivo
+        ? `${e.ejecutivo.nombre ?? ""} ${e.ejecutivo.apellido ?? ""}`.trim()
+        : null,
+    }));
+    setEventosCobranza(mappedEventos);
 
     // Mapa cliente_id → lead_score
     const scoreMap = new Map<string, number>();
@@ -104,6 +139,27 @@ const Clientes = () => {
     setClientes(mapped);
     setLoading(false);
   };
+
+  // Eventos cobrados visibles en el tab COBRANZAS
+  const filteredEventos = useMemo(() => {
+    // Solo se muestran en COBRANZAS (y en "all" cuando tipFilter = "evento")
+    const mostrar = filter === "COBRANZAS" || (filter === "all" && tipFilter === "evento");
+    if (!mostrar) return [];
+    if (tipFilter === "local") return [];
+
+    const qLower = q.toLowerCase();
+    return eventosCobranza.filter((e) => {
+      const evId = e.numero_evento ? `EV-${String(e.numero_evento).padStart(3, "0")}` : "";
+      const matchQ =
+        !q ||
+        (e.nombre_evento ?? "").toLowerCase().includes(qLower) ||
+        (e.cliente_nombre ?? "").toLowerCase().includes(qLower) ||
+        (e.tipo_evento ?? "").toLowerCase().includes(qLower) ||
+        evId.toLowerCase().includes(q.toLowerCase());
+      const matchAccess = canManage || e.ejecutivo_id === user?.id;
+      return matchQ && matchAccess;
+    });
+  }, [eventosCobranza, filter, tipFilter, q, canManage, user]);
 
   const filtered = useMemo(() => {
     return clientes.filter((c) => {
@@ -147,7 +203,9 @@ const Clientes = () => {
     <>
       <AppHeader
         title={ejFilter && canManage ? "Cartera del ejecutivo" : canManage ? "Cartera total" : "Clientes"}
-        subtitle={loading ? "Cargando..." : `${filtered.length} clientes`}
+        subtitle={loading ? "Cargando..." : filteredEventos.length > 0
+          ? `${filtered.length} clientes · ${filteredEventos.length} eventos`
+          : `${filtered.length} clientes`}
       />
 
       <div className="px-4 pt-4">
@@ -221,7 +279,7 @@ const Clientes = () => {
             <div className="flex justify-center pt-10">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
-          ) : filtered.length === 0 ? (
+          ) : filtered.length === 0 && filteredEventos.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-border bg-card p-10 text-center">
               <p className="text-sm font-semibold">Sin resultados</p>
               <p className="mt-1 text-xs text-muted-foreground">
@@ -229,7 +287,8 @@ const Clientes = () => {
               </p>
             </div>
           ) : (
-            filtered.map((c) => (
+            <>
+            {filtered.map((c) => (
               <Link
                 key={c.id}
                 to={`/app/clientes/${c.id}`}
@@ -329,7 +388,70 @@ const Clientes = () => {
                   <ChevronRight className="h-4 w-4 text-muted-foreground" />
                 </div>
               </Link>
-            ))
+            ))}
+
+            {/* Eventos cobrados — aparecen solo en tab COBRANZAS */}
+            {filteredEventos.length > 0 && (
+              <>
+                {filtered.length > 0 && (
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground pt-1">
+                    Eventos cobrados
+                  </p>
+                )}
+                {filteredEventos.map((ev) => (
+                  <Link
+                    key={`ev-${ev.id}`}
+                    to={`/app/clientes/${ev.cliente_id}`}
+                    className="block rounded-2xl border border-green-200 bg-green-50/50 dark:bg-green-950/20 p-4 shadow-card transition-smooth hover:shadow-elevated active:scale-[0.99]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        {ev.numero_evento && (
+                          <p className="text-[10px] font-bold tracking-widest text-muted-foreground uppercase mb-0.5">
+                            EV-{String(ev.numero_evento).padStart(3, "0")}
+                          </p>
+                        )}
+                        <h3 className="truncate text-sm font-bold">{ev.nombre_evento ?? "Sin nombre"}</h3>
+                        {ev.tipo_evento && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">{ev.tipo_evento}</p>
+                        )}
+                        {ev.cliente_nombre && (
+                          <p className="mt-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                            🎉 {ev.cliente_nombre}
+                          </p>
+                        )}
+                        {ev.ejecutivo_nombre && (canManage || ev.ejecutivo_id !== user?.id) && (
+                          <p className={cn(
+                            "mt-0.5 flex items-center gap-1 text-[11px] font-semibold",
+                            ev.ejecutivo_id === user?.id ? "text-primary" : "text-muted-foreground"
+                          )}>
+                            <User className="h-3 w-3" />
+                            {ev.ejecutivo_id === user?.id ? "Mi evento" : ev.ejecutivo_nombre}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        <span className="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300">
+                          COBRADO
+                        </span>
+                        {ev.tarifa_evento != null && (
+                          <p className="text-sm font-bold tabular-nums text-primary">
+                            {formatPYG(ev.tarifa_evento)}
+                          </p>
+                        )}
+                        {ev.fecha_evento && (
+                          <p className="text-[10px] text-muted-foreground">
+                            {new Date(ev.fecha_evento + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
+                          </p>
+                        )}
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </>
+            )}
+            </>
           )}
         </div>
       </div>
