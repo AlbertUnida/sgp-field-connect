@@ -191,6 +191,7 @@ const ClienteDetalle = () => {
     razon_social_factura: "",
     ruc_factura: "",
     lugar_evento: "",
+    direccion_evento: "",
     email_contacto: "",
     telefono_contacto: "",
     notas: "",
@@ -579,7 +580,8 @@ const ClienteDetalle = () => {
       fecha_cobro: hoy,
       razon_social_factura: cliente?.razon_social ?? "",
       ruc_factura: cliente?.ruc ?? "",
-      lugar_evento: cliente?.nombre_salon ?? cliente?.direccion ?? "",
+      lugar_evento: cliente?.nombre_salon ?? "",
+      direccion_evento: cliente?.direccion ?? "",
       email_contacto: cliente?.email_cliente ?? "",
       telefono_contacto: cliente?.telefono ?? "",
       notas: "",
@@ -612,6 +614,7 @@ const ClienteDetalle = () => {
       razon_social_factura: cobroEv.razon_social_factura || null,
       ruc_factura: cobroEv.ruc_factura || null,
       lugar_evento: cobroEv.lugar_evento || null,
+      direccion_evento: cobroEv.direccion_evento || null,
       email_contacto: cobroEv.email_contacto || null,
       telefono_contacto: cobroEv.telefono_contacto || null,
       eventos_ids: eventosSelArr,
@@ -636,7 +639,7 @@ const ClienteDetalle = () => {
     setEventosSeleccionados(new Set());
     setShowCobroEventos(false);
     setModoSeleccion(false);
-    setCobroEv({ monto: "", metodo_pago: "efectivo", modalidad: "pago_unico", fecha_cobro: hoy, razon_social_factura: "", ruc_factura: "", lugar_evento: "", email_contacto: "", telefono_contacto: "", notas: "" });
+    setCobroEv({ monto: "", metodo_pago: "efectivo", modalidad: "pago_unico", fecha_cobro: hoy, razon_social_factura: "", ruc_factura: "", lugar_evento: "", direccion_evento: "", email_contacto: "", telefono_contacto: "", notas: "" });
     await Promise.all([cargarCliente(), cargarCobros(), cargarHistorial()]);
     setGuardandoCobroEv(false);
   };
@@ -1651,11 +1654,20 @@ const ClienteDetalle = () => {
                     <p className="text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-400">Lugar del evento</p>
                     <p className="text-[11px] text-muted-foreground">Pre-cargado del cliente. Editá si el evento es en otro lugar.</p>
                     <div className="space-y-1.5">
-                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Lugar / Salón</Label>
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Lugar del evento</Label>
                       <Input
-                        placeholder="Ej: Salón Los Pinos, Av. España 1234"
+                        placeholder="Ej: Salón Los Pinos"
                         value={cobroEv.lugar_evento}
                         onChange={(e) => setCobEv("lugar_evento", e.target.value)}
+                        className="h-10 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Dirección</Label>
+                      <Input
+                        placeholder="Av. España 1234"
+                        value={cobroEv.direccion_evento}
+                        onChange={(e) => setCobEv("direccion_evento", e.target.value)}
                         className="h-10 text-sm"
                       />
                     </div>
