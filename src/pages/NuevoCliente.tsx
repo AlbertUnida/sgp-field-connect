@@ -74,8 +74,10 @@ const NuevoCliente = () => {
 
   const guardar = async () => {
     if (!form.nombre_comercial.trim()) { toast.error("El nombre del local es obligatorio"); return; }
-    if (!form.categoria_id) { toast.error("Seleccioná una categoría"); return; }
-    if (!form.rubro_id) { toast.error("Seleccioná un rubro"); return; }
+    if (form.tipo_cliente === "local") {
+      if (!form.categoria_id) { toast.error("Seleccioná una categoría"); return; }
+      if (!form.rubro_id) { toast.error("Seleccioná un rubro"); return; }
+    }
 
     setGuardando(true);
 
@@ -89,14 +91,13 @@ const NuevoCliente = () => {
       barrio: form.barrio.trim() || null,
       direccion: form.direccion.trim() || null,
       calle_secundaria: form.calle_secundaria.trim() || null,
-      tarifa_mensual: form.monto_licencia ? parseInt(form.monto_licencia.replace(/\D/g, "")) : null,
-      categoria_id: form.categoria_id,
-      rubro_id: form.rubro_id,
-      sub_rubro_id: form.sub_rubro_id || null,
+      tarifa_mensual: form.tipo_cliente === "local" && form.monto_licencia ? parseInt(form.monto_licencia.replace(/\D/g, "")) : null,
+      categoria_id: form.tipo_cliente === "local" ? form.categoria_id : null,
+      rubro_id: form.tipo_cliente === "local" ? form.rubro_id : null,
+      sub_rubro_id: form.tipo_cliente === "local" ? (form.sub_rubro_id || null) : null,
       tipo_cliente: form.tipo_cliente,
-      // Campos del venue (null si es local)
-      nombre_salon: form.tipo_cliente === "evento" ? form.nombre_salon.trim() || null : null,
-      capacidad: form.tipo_cliente === "evento" && form.capacidad ? parseInt(form.capacidad.replace(/\D/g, "")) || null : null,
+      nombre_salon: null,
+      capacidad: null,
       instancia: form.tipo_cliente === "evento" ? "COMERCIAL" : "CENSO",
       estado: "activo",
       activo: true,
@@ -150,7 +151,8 @@ const NuevoCliente = () => {
           </div>
         </div>
 
-        {/* Categoría y Rubro */}
+        {/* Categoría y Rubro — solo para locales */}
+        {form.tipo_cliente === "local" && (
         <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
           <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Clasificación</p>
 
@@ -201,6 +203,7 @@ const NuevoCliente = () => {
             </div>
           )}
         </div>
+        )}
 
         {/* Datos del local */}
         <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
@@ -212,15 +215,6 @@ const NuevoCliente = () => {
           <Campo label="Teléfono" placeholder="+595 981 123-456" value={form.telefono} onChange={(v) => set("telefono", v)} type="tel" />
         </div>
 
-        {/* Campos específicos del Venue */}
-        {form.tipo_cliente === "evento" && (
-          <div className="rounded-2xl border border-amber-300 bg-amber-50/50 dark:bg-amber-950/20 p-4 shadow-card space-y-4">
-            <p className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Datos del venue</p>
-            <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80 -mt-1">Los datos de cada evento (fecha, tipo, tarifa) se cargan dentro del cliente.</p>
-            <Campo label="Nombre del salón / espacio" placeholder="Salón Los Pinos" value={form.nombre_salon} onChange={(v) => set("nombre_salon", v)} />
-            <Campo label="Capacidad / Aforo (personas)" placeholder="300" value={form.capacidad} onChange={(v) => set("capacidad", v)} type="number" />
-          </div>
-        )}
 
         {/* Dirección */}
         <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">

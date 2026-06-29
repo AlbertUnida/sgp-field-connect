@@ -1633,20 +1633,12 @@ const ClienteDetalle = () => {
                     />
                   </div>
 
-                  {/* Modalidad */}
+                  {/* Modalidad — eventos son siempre pago único */}
                   <div className="space-y-1.5">
                     <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Modalidad</Label>
-                    <select
-                      value={cobroEv.modalidad}
-                      onChange={(e) => setCobEv("modalidad", e.target.value)}
-                      className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="pago_unico">Pago único</option>
-                      <option value="mensual">Mensual</option>
-                      <option value="trimestral">Trimestral</option>
-                      <option value="semestral">Semestral</option>
-                      <option value="anual">Anual</option>
-                    </select>
+                    <div className="h-11 flex items-center px-3 rounded-xl border border-input bg-muted/40 text-sm text-muted-foreground">
+                      Pago único por evento
+                    </div>
                   </div>
 
                   {/* Método + Fecha */}
@@ -1688,7 +1680,7 @@ const ClienteDetalle = () => {
                   </div>
 
                   <div className="rounded-xl bg-green-100 dark:bg-green-900/30 px-3 py-2.5 text-xs text-green-800 dark:text-green-300 font-semibold">
-                    ✅ Al confirmar, el cliente pasará automáticamente a <strong>COBRANZAS</strong>.
+                    ✅ Al confirmar, los eventos seleccionados quedarán marcados como <strong>cerrado</strong>. El cliente permanece en COMERCIAL.
                   </div>
 
                   <Button

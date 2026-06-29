@@ -10,6 +10,9 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
+interface Categoria { id: string; nombre: string; }
+interface Rubro { id: string; categoria_id: string; nombre: string; }
+
 const TIPOS_EVENTO = [
   { value: "casamiento",  label: "Casamiento" },
   { value: "quinceanos",  label: "Quinceaños" },
@@ -26,12 +29,19 @@ const NuevoEvento = () => {
 
   const [clienteNombre, setClienteNombre] = useState("");
   const [guardando, setGuardando] = useState(false);
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [rubros, setRubros] = useState<Rubro[]>([]);
+  const [rubrosFiltrados, setRubrosFiltrados] = useState<Rubro[]>([]);
 
   const [form, setForm] = useState({
     nombre_evento: "",
     fecha_evento: "",
     tipo_evento: "",
     tarifa_evento: "",
+    categoria_id: "",
+    rubro_id: "",
+    nombre_salon: "",
+    capacidad: "",
     notas: "",
   });
 
@@ -45,7 +55,19 @@ const NuevoEvento = () => {
       .eq("id", clienteId)
       .single()
       .then(({ data }) => setClienteNombre(data?.nombre_comercial ?? ""));
+
+    supabase.from("categorias").select("*").order("nombre").then(({ data }) => setCategorias(data ?? []));
+    supabase.from("rubros").select("*").order("nombre").then(({ data }) => setRubros(data ?? []));
   }, [clienteId]);
+
+  useEffect(() => {
+    if (form.categoria_id) {
+      setRubrosFiltrados(rubros.filter((r) => r.categoria_id === form.categoria_id));
+      setForm((p) => ({ ...p, rubro_id: "" }));
+    } else {
+      setRubrosFiltrados([]);
+    }
+  }, [form.categoria_id, rubros]);
 
   const guardar = async () => {
     if (!form.nombre_evento.trim()) { toast.error("El nombre del evento es obligatorio"); return; }
@@ -60,6 +82,10 @@ const NuevoEvento = () => {
       fecha_evento: form.fecha_evento,
       tipo_evento: form.tipo_evento,
       tarifa_evento: form.tarifa_evento ? parseInt(form.tarifa_evento.replace(/\D/g, "")) : null,
+      categoria_id: form.categoria_id || null,
+      rubro_id: form.rubro_id || null,
+      nombre_salon: form.nombre_salon.trim() || null,
+      capacidad: form.capacidad ? parseInt(form.capacidad.replace(/\D/g, "")) || null : null,
       notas: form.notas.trim() || null,
       estado: "prospecto",
       ejecutivo_id: user!.id,
@@ -78,10 +104,7 @@ const NuevoEvento = () => {
 
   return (
     <>
-      <AppHeader
-        title="Nuevo evento"
-        subtitle={clienteNombre}
-      />
+      <AppHeader title="Nuevo evento" subtitle={clienteNombre} />
 
       <div className="px-4 pt-4 pb-8 space-y-5">
 
@@ -129,6 +152,60 @@ const NuevoEvento = () => {
             placeholder="500000"
             value={form.tarifa_evento}
             onChange={(v) => set("tarifa_evento", v)}
+            type="number"
+          />
+        </div>
+
+        {/* Clasificación del evento */}
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Clasificación</p>
+
+          <div className="space-y-1.5">
+            <Label>Categoría</Label>
+            <select
+              value={form.categoria_id}
+              onChange={(e) => set("categoria_id", e.target.value)}
+              className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
+            >
+              <option value="">Seleccioná una categoría...</option>
+              {categorias.map((c) => (
+                <option key={c.id} value={c.id}>{c.nombre}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Rubro</Label>
+            <select
+              value={form.rubro_id}
+              onChange={(e) => set("rubro_id", e.target.value)}
+              disabled={!form.categoria_id}
+              className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm disabled:opacity-50"
+            >
+              <option value="">
+                {form.categoria_id ? "Seleccioná un rubro..." : "Primero elegí una categoría"}
+              </option>
+              {rubrosFiltrados.map((r) => (
+                <option key={r.id} value={r.id}>{r.nombre}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Datos del venue */}
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Datos del venue</p>
+          <Campo
+            label="Nombre del salón / espacio"
+            placeholder="Salón Los Pinos"
+            value={form.nombre_salon}
+            onChange={(v) => set("nombre_salon", v)}
+          />
+          <Campo
+            label="Capacidad / Aforo (personas)"
+            placeholder="300"
+            value={form.capacidad}
+            onChange={(v) => set("capacidad", v)}
             type="number"
           />
         </div>
