@@ -15,6 +15,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { formatPYG, relativeDate } from "@/lib/mock-data";
+import { RESULTADOS_GESTION } from "@/lib/resultados-gestion";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -112,6 +113,13 @@ const EventoDetalle = () => {
 
   // Resultado específico de evento
   const [resultadoReal, setResultadoReal] = useState("");
+
+  // Contacto por canal (Llamada / WhatsApp / Email)
+  const [contactoNombre, setContactoNombre] = useState("");
+  const [contactoApellido, setContactoApellido] = useState("");
+  const [contactoTelefono, setContactoTelefono] = useState("");
+  const [contactoEmail, setContactoEmail] = useState("");
+  const [contactoFecha, setContactoFecha] = useState(new Date().toISOString().split("T")[0]);
 
   // Notas y próxima acción
   const [notas, setNotas] = useState("");
@@ -275,6 +283,9 @@ const EventoDetalle = () => {
     setConEvento(null);
     setResultadoId(""); setReceptorNombre(""); setReceptorApellido("");
     setFechaEntrega(""); setActaNro(""); setResultadoReal("");
+    setContactoNombre(""); setContactoApellido("");
+    setContactoTelefono(""); setContactoEmail("");
+    setContactoFecha(new Date().toISOString().split("T")[0]);
     setNotas(""); setProxima("");
     quitarFoto();
   };
@@ -292,10 +303,11 @@ const EventoDetalle = () => {
         }
         if (!resultadoReal) { toast.error("Seleccioná el resultado de la gestión"); return; }
       }
-    } else {
-      // Llamada / WhatsApp / Email: por ahora requiere resultado
-      if (!resultadoId) { toast.error("Seleccioná el resultado de la gestión"); return; }
+    } else if (formTipo === "llamada" || formTipo === "whatsapp") {
+      if (!contactoNombre.trim()) { toast.error("Ingresá el nombre del contacto"); return; }
+      if (!resultadoReal) { toast.error("Seleccioná el resultado de la gestión"); return; }
     }
+    // email: sin validación de resultado obligatorio
 
     setGuardando(true);
 
@@ -340,17 +352,32 @@ const EventoDetalle = () => {
         }
         datosExtra.resultado_real = resultadoReal || null;
       }
+    } else if (formTipo === "llamada" || formTipo === "whatsapp") {
+      datosExtra.contacto_nombre = contactoNombre.trim() || null;
+      datosExtra.contacto_apellido = contactoApellido.trim() || null;
+      datosExtra.contacto_telefono = contactoTelefono.trim() || null;
+      datosExtra.contacto_fecha = contactoFecha || null;
+      datosExtra.resultado_real = resultadoReal || null;
+      const rrObj = RESULTADOS_GESTION.find((r) => r.key === resultadoReal);
+      datosExtra.score = rrObj?.score ?? null;
+    } else if (formTipo === "email") {
+      datosExtra.contacto_nombre = contactoNombre.trim() || null;
+      datosExtra.contacto_apellido = contactoApellido.trim() || null;
+      datosExtra.contacto_email = contactoEmail.trim() || null;
+      datosExtra.contacto_fecha = contactoFecha || null;
     }
 
     const resultadoText = formTipo === "visita" && conEvento === true
       ? (RESULTADOS_EVENTO.find((r) => r.key === resultadoReal)?.label ?? resultadoReal)
-      : (resultadoSeleccionado?.nombre ?? null);
+      : (formTipo === "llamada" || formTipo === "whatsapp")
+        ? (RESULTADOS_GESTION.find((r) => r.key === resultadoReal)?.label ?? null)
+        : null; // email: sin resultado inmediato
 
     const { error } = await supabase.from("gestiones").insert({
       cliente_id: evento.cliente_id,
       evento_id: eventoId,
       tipo: formTipo,
-      resultado_id: formTipo === "visita" && conEvento === true ? resultadoId : (resultadoId || null),
+      resultado_id: formTipo === "visita" ? (resultadoId || null) : null,
       resultado: resultadoText,
       datos_extra: Object.keys(datosExtra).length > 0 ? datosExtra : null,
       nota: notas.trim() || null,
@@ -662,25 +689,59 @@ const EventoDetalle = () => {
               </div>
             )}
 
-            {/* ── Llamada / WhatsApp / Email: flujo igual a locales ── */}
-            {formTipo !== "visita" && (
+            {/* ── LLAMADA / WHATSAPP: bloque contacto + resultado ── */}
+            {(formTipo === "llamada" || formTipo === "whatsapp") && (
               <>
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Resultado <span className="text-destructive">*</span>
-                  </Label>
+                {/* Bloque contacto */}
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-primary">
+                    {formTipo === "llamada" ? "📞 Datos de la llamada" : "💬 Datos del WhatsApp"}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Nombre <span className="text-destructive">*</span>
+                      </Label>
+                      <Input placeholder="Nombre" value={contactoNombre} onChange={(e) => setContactoNombre(e.target.value)} className="h-9 text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Apellido</Label>
+                      <Input placeholder="Apellido" value={contactoApellido} onChange={(e) => setContactoApellido(e.target.value)} className="h-9 text-sm" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nro. Teléfono</Label>
+                      <Input placeholder="09X XXX XXX" value={contactoTelefono} onChange={(e) => setContactoTelefono(e.target.value)} className="h-9 text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Fecha</Label>
+                      <Input type="date" value={contactoFecha} onChange={(e) => setContactoFecha(e.target.value)} className="h-9 text-sm" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Resultado */}
+                <div className="rounded-xl border border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                      Resultado <span className="text-destructive">*</span>
+                    </p>
+                  </div>
                   <select
-                    value={resultadoId}
-                    onChange={(e) => setResultadoId(e.target.value)}
+                    value={resultadoReal}
+                    onChange={(e) => setResultadoReal(e.target.value)}
                     className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
                   >
-                    <option value="">Seleccioná el resultado...</option>
-                    {tiposResultadoFiltrados.map((r) => (
-                      <option key={r.id} value={r.id}>{r.nombre}</option>
+                    <option value="">¿Cuál fue el resultado?</option>
+                    {RESULTADOS_GESTION.map((r) => (
+                      <option key={r.key} value={r.key}>{r.label}</option>
                     ))}
                   </select>
                 </div>
 
+                {/* Notas */}
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notas</Label>
                   <Textarea
@@ -690,9 +751,62 @@ const EventoDetalle = () => {
                   />
                 </div>
 
+                {/* Próxima acción */}
                 <div className="space-y-1.5">
                   <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Próxima acción</Label>
-                  <Input type="date" value={proxima} onChange={(e) => setProxima(e.target.value)} className="h-11" />
+                  <div className="relative">
+                    <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input type="date" value={proxima} onChange={(e) => setProxima(e.target.value)} className="h-11 pl-10" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ── EMAIL: bloque contacto sin resultado ── */}
+            {formTipo === "email" && (
+              <>
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-primary">✉️ Datos del destinatario</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nombre</Label>
+                      <Input placeholder="Nombre" value={contactoNombre} onChange={(e) => setContactoNombre(e.target.value)} className="h-9 text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Apellido</Label>
+                      <Input placeholder="Apellido" value={contactoApellido} onChange={(e) => setContactoApellido(e.target.value)} className="h-9 text-sm" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Email</Label>
+                      <Input type="email" placeholder="correo@ejemplo.com" value={contactoEmail} onChange={(e) => setContactoEmail(e.target.value)} className="h-9 text-sm" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Fecha</Label>
+                      <Input type="date" value={contactoFecha} onChange={(e) => setContactoFecha(e.target.value)} className="h-9 text-sm" />
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground italic">El resultado se registrará cuando llegue la respuesta.</p>
+                </div>
+
+                {/* Notas */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notas</Label>
+                  <Textarea
+                    placeholder="Detalles del email enviado..."
+                    value={notas} onChange={(e) => setNotas(e.target.value)}
+                    rows={3} className="resize-none"
+                  />
+                </div>
+
+                {/* Próxima acción */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Próxima acción</Label>
+                  <div className="relative">
+                    <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input type="date" value={proxima} onChange={(e) => setProxima(e.target.value)} className="h-11 pl-10" />
+                  </div>
                 </div>
               </>
             )}
@@ -811,10 +925,35 @@ const EventoDetalle = () => {
                           {g.resultado}
                         </p>
                       )}
-                      {de?.resultado_real && (
+                      {de?.resultado_real && g.tipo === "visita" && (
                         <p className="mt-0.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
                           → {RESULTADOS_EVENTO.find((r) => r.key === de.resultado_real)?.label ?? de.resultado_real}
                         </p>
+                      )}
+                      {de?.resultado_real && (g.tipo === "llamada" || g.tipo === "whatsapp") && (
+                        <p className="mt-0.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
+                          → {RESULTADOS_GESTION.find((r) => r.key === de.resultado_real)?.label ?? de.resultado_real}
+                        </p>
+                      )}
+                      {/* Datos de contacto (llamada / whatsapp / email) */}
+                      {de?.contacto_nombre && (
+                        <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 space-y-0.5">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-primary">
+                            {g.tipo === "llamada" ? "📞 Contacto" : g.tipo === "whatsapp" ? "💬 Contacto" : "✉️ Destinatario"}
+                          </p>
+                          <p className="text-xs text-foreground">{[de.contacto_nombre, de.contacto_apellido].filter(Boolean).join(" ")}</p>
+                          {de.contacto_telefono && (
+                            <p className="text-xs text-muted-foreground">Tel: {de.contacto_telefono}</p>
+                          )}
+                          {de.contacto_email && (
+                            <p className="text-xs text-muted-foreground">{de.contacto_email}</p>
+                          )}
+                          {de.contacto_fecha && (
+                            <p className="text-xs text-muted-foreground">
+                              {new Date(de.contacto_fecha + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
+                            </p>
+                          )}
+                        </div>
                       )}
                       {de?.receptor_nombre && (
                         <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 space-y-0.5">
