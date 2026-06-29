@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   ArrowLeft, Car, PhoneCall, Mail, MessageCircle, Calendar,
   Building2, FileText, Loader2, CheckCircle2, Clock,
-  ChevronDown, ChevronUp, Save, Pencil, User
+  ChevronDown, ChevronUp, Save, Pencil, User,
+  MapPin, ImagePlus, Trash2, AlertCircle,
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,7 @@ interface Gestion {
   nota: string | null;
   fecha_inicio: string | null;
   created_at: string;
+  datos_extra: Record<string, unknown> | null;
   ejecutivo: { nombre: string; apellido: string } | null;
 }
 
@@ -70,10 +72,18 @@ const TIPOS_EVENTO_LABEL: Record<string, string> = {
   social: "Social / Privado", musical: "Musical / Show", otro: "Otro",
 };
 
+// Resultados específicos para visita de evento
+const RESULTADOS_EVENTO = [
+  { key: "no_recibe_no_firma",        label: "No recibe, No firma" },
+  { key: "no_recibe_no_identifica",   label: "No recibe, No se identifica" },
+  { key: "recibe_no_firma",           label: "Recibe y no firma" },
+  { key: "evento_declarado",          label: "Evento Declarado" },
+];
+
 const EventoDetalle = () => {
   const { id: clienteId, eventoId } = useParams();
   const { user } = useAuth();
-  const { canManage } = useProfile();
+  const { canManage, nombreCompleto } = useProfile();
   const navigate = useNavigate();
 
   const [evento, setEvento] = useState<Evento | null>(null);
@@ -84,10 +94,38 @@ const EventoDetalle = () => {
 
   const [tiposResultado, setTiposResultado] = useState<TipoResultado[]>([]);
   const [resultadosCompletados, setResultadosCompletados] = useState<Set<string>>(new Set());
-  const [resultadoId, setResultadoId] = useState("");
+
+  // Canal selector
   const [formTipo, setFormTipo] = useState("visita");
+
+  // CON EVENTO / SIN EVENTO (solo para visita)
+  const [conEvento, setConEvento] = useState<boolean | null>(null);
+
+  // Tarea (solo visita CON EVENTO)
+  const [resultadoId, setResultadoId] = useState("");
+
+  // Receptor (visita CON EVENTO con receptor)
+  const [receptorNombre, setReceptorNombre] = useState("");
+  const [receptorApellido, setReceptorApellido] = useState("");
+  const [fechaEntrega, setFechaEntrega] = useState("");
+  const [actaNro, setActaNro] = useState("");
+
+  // Resultado específico de evento
+  const [resultadoReal, setResultadoReal] = useState("");
+
+  // Notas y próxima acción
   const [notas, setNotas] = useState("");
   const [proxima, setProxima] = useState("");
+
+  // GPS
+  const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
+  const [gpsEstado, setGpsEstado] = useState<"idle" | "buscando" | "ok" | "error">("idle");
+
+  // Foto
+  const fotoInputRef = useRef<HTMLInputElement>(null);
+  const [fotoFile, setFotoFile] = useState<File | null>(null);
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null);
+  const [subiendoFoto, setSubiendoFoto] = useState(false);
 
   // Editar estado del evento
   const [editandoEstado, setEditandoEstado] = useState(false);
@@ -95,8 +133,13 @@ const EventoDetalle = () => {
   const [guardandoEstado, setGuardandoEstado] = useState(false);
 
   const resultadoSeleccionado = tiposResultado.find((t) => t.id === resultadoId) ?? null;
+  const tipoFormulario = resultadoSeleccionado?.tipo_formulario ?? null;
+  const mostrarReceptor = conEvento === true && (
+    tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
+    tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion"
+  );
 
-  // Filtrar tipos_resultado por cartera evento + filtro secuencial nota_reclamo
+  // Tipos de resultado filtrados por cartera "evento"
   const tiposResultadoFiltrados = (() => {
     const porCartera = tiposResultado.filter(
       (t) => t.tipo_cartera === "ambos" || t.tipo_cartera === "evento"
@@ -118,6 +161,19 @@ const EventoDetalle = () => {
     cargarResultados();
   }, [eventoId]);
 
+  // Capturar GPS automáticamente al seleccionar VISITA
+  useEffect(() => {
+    if (formTipo !== "visita") {
+      setGps(null); setGpsEstado("idle");
+      return;
+    }
+    setGpsEstado("buscando");
+    capturarGPSPromise().then((coords) => {
+      if (coords) { setGps(coords); setGpsEstado("ok"); }
+      else { setGpsEstado("error"); }
+    });
+  }, [formTipo]);
+
   const cargarEvento = async () => {
     const { data, error } = await supabase
       .from("eventos_agenda")
@@ -133,7 +189,7 @@ const EventoDetalle = () => {
   const cargarGestiones = async () => {
     const { data } = await supabase
       .from("gestiones")
-      .select("id, tipo, resultado, nota, fecha_inicio, created_at, ejecutivo:ejecutivo_id(nombre, apellido)")
+      .select("id, tipo, resultado, nota, fecha_inicio, created_at, datos_extra, ejecutivo:ejecutivo_id(nombre, apellido)")
       .eq("evento_id", eventoId)
       .order("created_at", { ascending: false });
     setGestiones(data ?? []);
@@ -151,27 +207,166 @@ const EventoDetalle = () => {
     setTiposResultado(data ?? []);
   };
 
+  const capturarGPSPromise = (): Promise<{ lat: number; lng: number } | null> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) { resolve(null); return; }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+  };
+
+  const aplicarMarcaDeAgua = (file: File, nombre: string): Promise<File> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width; canvas.height = img.height;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0);
+        const ahora = new Date();
+        const fecha = ahora.toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit", year: "numeric" });
+        const hora = ahora.toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        const linea1 = nombre.toUpperCase();
+        const linea2 = `${fecha}  •  ${hora}  •  SGP Paraguay`;
+        const fontSize = Math.max(Math.round(img.width * 0.038), 22);
+        const smallSize = Math.round(fontSize * 0.72);
+        const padding = Math.round(fontSize * 0.7);
+        const barHeight = fontSize + smallSize + padding * 2.5;
+        ctx.fillStyle = "rgba(0, 0, 0, 0.70)";
+        ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+        ctx.fillStyle = "#3b82f6";
+        ctx.fillRect(0, img.height - barHeight, img.width, Math.round(fontSize * 0.18));
+        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+        ctx.fillStyle = "#ffffff"; ctx.textBaseline = "top"; ctx.textAlign = "left";
+        ctx.fillText(linea1, padding, img.height - barHeight + padding);
+        ctx.font = `${smallSize}px Arial, sans-serif`;
+        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        ctx.fillText(linea2, padding, img.height - barHeight + padding + fontSize + Math.round(smallSize * 0.3));
+        URL.revokeObjectURL(objectUrl);
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(file); return; }
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" }));
+        }, "image/jpeg", 0.92);
+      };
+      img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
+      img.src = objectUrl;
+    });
+  };
+
+  const seleccionarFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const nombre = nombreCompleto || "Ejecutivo SGP";
+    const fotoConMarca = await aplicarMarcaDeAgua(file, nombre);
+    setFotoFile(fotoConMarca);
+    setFotoPreview(URL.createObjectURL(fotoConMarca));
+  };
+
+  const quitarFoto = () => {
+    setFotoFile(null); setFotoPreview(null);
+    if (fotoInputRef.current) fotoInputRef.current.value = "";
+  };
+
+  const resetForm = () => {
+    setConEvento(null);
+    setResultadoId(""); setReceptorNombre(""); setReceptorApellido("");
+    setFechaEntrega(""); setActaNro(""); setResultadoReal("");
+    setNotas(""); setProxima("");
+    quitarFoto();
+  };
+
   const registrarGestion = async () => {
-    if (!resultadoId) { toast.error("Seleccioná el resultado de la gestión"); return; }
     if (!evento) return;
 
+    // Validaciones según canal
+    if (formTipo === "visita") {
+      if (conEvento === null) { toast.error("Indicá si la visita fue CON EVENTO o SIN EVENTO"); return; }
+      if (conEvento === true) {
+        if (!resultadoId) { toast.error("Seleccioná la tarea realizada"); return; }
+        if (mostrarReceptor && !receptorNombre.trim()) {
+          toast.error("Ingresá el nombre de quien recibió / estuvo presente"); return;
+        }
+        if (!resultadoReal) { toast.error("Seleccioná el resultado de la gestión"); return; }
+      }
+    } else {
+      // Llamada / WhatsApp / Email: por ahora requiere resultado
+      if (!resultadoId) { toast.error("Seleccioná el resultado de la gestión"); return; }
+    }
+
     setGuardando(true);
+
+    // GPS fresco al guardar visita
+    let coordenadas = gps;
+    if (formTipo === "visita") {
+      setGpsEstado("buscando");
+      const fresh = await capturarGPSPromise();
+      if (fresh) { coordenadas = fresh; setGps(fresh); setGpsEstado("ok"); }
+      else { setGpsEstado("error"); coordenadas = null; }
+    }
+
+    // Subir foto si la hay
+    let fotoUrl: string | null = null;
+    if (fotoFile) {
+      setSubiendoFoto(true);
+      const ext = fotoFile.name.split(".").pop() ?? "jpg";
+      const path = `${user!.id}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from("gestiones-fotos")
+        .upload(path, fotoFile, { contentType: fotoFile.type, upsert: false });
+      if (!uploadError) {
+        const { data: urlData } = supabase.storage.from("gestiones-fotos").getPublicUrl(path);
+        fotoUrl = urlData.publicUrl;
+      } else {
+        toast.error("No se pudo subir la foto — se guardará sin imagen");
+      }
+      setSubiendoFoto(false);
+    }
+
+    // Construir datos_extra
+    const datosExtra: Record<string, unknown> = {};
+
+    if (formTipo === "visita") {
+      datosExtra.con_evento = conEvento;
+      if (conEvento === true) {
+        if (mostrarReceptor) {
+          datosExtra.receptor_nombre = receptorNombre.trim();
+          datosExtra.receptor_apellido = receptorApellido.trim() || null;
+          datosExtra.fecha_entrega = fechaEntrega || null;
+          datosExtra.acta_nro = actaNro.trim() || null;
+        }
+        datosExtra.resultado_real = resultadoReal || null;
+      }
+    }
+
+    const resultadoText = formTipo === "visita" && conEvento === true
+      ? (RESULTADOS_EVENTO.find((r) => r.key === resultadoReal)?.label ?? resultadoReal)
+      : (resultadoSeleccionado?.nombre ?? null);
+
     const { error } = await supabase.from("gestiones").insert({
       cliente_id: evento.cliente_id,
       evento_id: eventoId,
       tipo: formTipo,
-      resultado_id: resultadoId,
-      resultado: resultadoSeleccionado?.nombre ?? "",
+      resultado_id: formTipo === "visita" && conEvento === true ? resultadoId : (resultadoId || null),
+      resultado: resultadoText,
+      datos_extra: Object.keys(datosExtra).length > 0 ? datosExtra : null,
       nota: notas.trim() || null,
       proxima_accion: proxima || null,
       ejecutivo_id: user!.id,
       fecha_inicio: new Date().toISOString(),
+      lat_inicio: coordenadas?.lat ?? null,
+      lng_inicio: coordenadas?.lng ?? null,
+      foto_url: fotoUrl,
     });
 
     if (error) { toast.error("Error al registrar: " + error.message); setGuardando(false); return; }
 
     toast.success("✅ Gestión registrada");
-    setResultadoId(""); setNotas(""); setProxima(""); setShowForm(false);
+    resetForm();
+    setShowForm(false);
     cargarGestiones();
     setGuardando(false);
   };
@@ -270,7 +465,7 @@ const EventoDetalle = () => {
           {evento.tipo_evento && (
             <InfoRow icon={<FileText className="h-4 w-4" />} label="Tipo" value={TIPOS_EVENTO_LABEL[evento.tipo_evento] ?? evento.tipo_evento} />
           )}
-          {evento.tarifa_evento && (
+          {evento.tarifa_evento != null && (
             <InfoRow icon={<Building2 className="h-4 w-4" />} label="Tarifa" value={formatPYG(evento.tarifa_evento)} valueClass="font-bold text-primary" />
           )}
           {evento.ejecutivo && (
@@ -283,7 +478,7 @@ const EventoDetalle = () => {
 
         {/* Botón registrar gestión */}
         <Button
-          onClick={() => setShowForm((v) => !v)}
+          onClick={() => { setShowForm((v) => !v); if (showForm) resetForm(); }}
           variant={showForm ? "outline" : "default"}
           className="w-full gap-2"
         >
@@ -296,13 +491,16 @@ const EventoDetalle = () => {
           <section className="rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
             <h2 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Nueva gestión</h2>
 
-            {/* Tipo de contacto */}
+            {/* Canal */}
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
               {TIPOS_GESTION.map(({ key, label, icon: Icon, color }) => (
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setFormTipo(key)}
+                  onClick={() => {
+                    setFormTipo(key);
+                    resetForm();
+                  }}
                   className={cn(
                     "flex flex-col items-center gap-1.5 rounded-xl border p-3 transition-smooth text-center",
                     formTipo === key
@@ -320,47 +518,253 @@ const EventoDetalle = () => {
               ))}
             </div>
 
-            {/* Resultado */}
-            <div className="space-y-1.5">
-              <Label>Resultado <span className="text-destructive">*</span></Label>
-              <select
-                value={resultadoId}
-                onChange={(e) => setResultadoId(e.target.value)}
-                className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
-              >
-                <option value="">Seleccioná el resultado...</option>
-                {tiposResultadoFiltrados.map((r) => (
-                  <option key={r.id} value={r.id}>{r.nombre}</option>
-                ))}
-              </select>
-            </div>
+            {/* ── VISITA: toggle CON EVENTO / SIN EVENTO ── */}
+            {formTipo === "visita" && (
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Acción <span className="text-destructive">*</span>
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setConEvento(true); setResultadoId(""); setResultadoReal(""); }}
+                    className={cn(
+                      "rounded-xl border py-3 text-sm font-bold transition-smooth",
+                      conEvento === true
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-secondary text-muted-foreground hover:border-primary/40"
+                    )}
+                  >
+                    🎉 Con evento
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setConEvento(false); setResultadoId(""); setResultadoReal(""); }}
+                    className={cn(
+                      "rounded-xl border py-3 text-sm font-bold transition-smooth",
+                      conEvento === false
+                        ? "border-amber-500 bg-amber-500 text-white"
+                        : "border-border bg-secondary text-muted-foreground hover:border-amber-400/60"
+                    )}
+                  >
+                    📋 Sin evento
+                  </button>
+                </div>
+              </div>
+            )}
 
-            {/* Notas */}
-            <div className="space-y-1.5">
-              <Label>Notas</Label>
-              <Textarea
-                placeholder="Detalles de la gestión..."
-                value={notas}
-                onChange={(e) => setNotas(e.target.value)}
-                rows={3}
-                className="resize-none"
-              />
-            </div>
+            {/* ── VISITA CON EVENTO: flujo completo ── */}
+            {formTipo === "visita" && conEvento === true && (
+              <>
+                {/* Tarea */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Tarea <span className="text-destructive">*</span>
+                  </Label>
+                  <select
+                    value={resultadoId}
+                    onChange={(e) => {
+                      setResultadoId(e.target.value);
+                      setReceptorNombre(""); setReceptorApellido("");
+                      setFechaEntrega(new Date().toISOString().split("T")[0]);
+                      setActaNro(""); setResultadoReal("");
+                    }}
+                    className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">Seleccioná la tarea realizada...</option>
+                    {tiposResultadoFiltrados.map((r) => (
+                      <option key={r.id} value={r.id}>{r.nombre}</option>
+                    ))}
+                  </select>
+                </div>
 
-            {/* Próxima acción */}
-            <div className="space-y-1.5">
-              <Label>Próxima acción</Label>
-              <Input
-                type="date"
-                value={proxima}
-                onChange={(e) => setProxima(e.target.value)}
-                className="h-11"
-              />
-            </div>
+                {/* Receptor */}
+                {mostrarReceptor && (
+                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
+                    <p className="text-xs font-bold uppercase tracking-wider text-primary">
+                      📄 {resultadoSeleccionado?.nombre ?? "Datos del receptor"}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">Datos de quien recibió / estuvo presente.</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Nombre <span className="text-destructive">*</span>
+                        </Label>
+                        <Input placeholder="Nombre" value={receptorNombre} onChange={(e) => setReceptorNombre(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Apellido</Label>
+                        <Input placeholder="Apellido" value={receptorApellido} onChange={(e) => setReceptorApellido(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Fecha</Label>
+                        <Input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Acta Nro.</Label>
+                        <Input placeholder="Nº de acta" value={actaNro} onChange={(e) => setActaNro(e.target.value)} className="h-9 text-sm" />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
-            <Button onClick={registrarGestion} disabled={guardando} className="w-full gap-2">
-              {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              {guardando ? "Guardando..." : "Guardar gestión"}
+                {/* Resultado específico de evento */}
+                {resultadoId && (
+                  <div className="rounded-xl border border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                        Resultado <span className="text-destructive">*</span>
+                      </p>
+                    </div>
+                    <select
+                      value={resultadoReal}
+                      onChange={(e) => setResultadoReal(e.target.value)}
+                      className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                    >
+                      <option value="">¿Cuál fue el resultado?</option>
+                      {RESULTADOS_EVENTO.map((r) => (
+                        <option key={r.key} value={r.key}>{r.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Notas */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notas / Resumen</Label>
+                  <Textarea
+                    placeholder="Puntos clave conversados, acuerdos, observaciones..."
+                    value={notas} onChange={(e) => setNotas(e.target.value)}
+                    rows={3} className="resize-none"
+                  />
+                </div>
+
+                {/* Próxima acción */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Próxima acción</Label>
+                  <div className="relative">
+                    <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input type="date" value={proxima} onChange={(e) => setProxima(e.target.value)} className="h-11 pl-10" />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ── VISITA SIN EVENTO: solo evidencia ── */}
+            {formTipo === "visita" && conEvento === false && (
+              <div className="rounded-xl border border-amber-300/60 bg-amber-50/40 dark:bg-amber-950/20 p-3">
+                <p className="text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                  📋 Solo se registrará la geolocalización y la foto como evidencia de la visita.
+                </p>
+              </div>
+            )}
+
+            {/* ── Llamada / WhatsApp / Email: flujo igual a locales ── */}
+            {formTipo !== "visita" && (
+              <>
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Resultado <span className="text-destructive">*</span>
+                  </Label>
+                  <select
+                    value={resultadoId}
+                    onChange={(e) => setResultadoId(e.target.value)}
+                    className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="">Seleccioná el resultado...</option>
+                    {tiposResultadoFiltrados.map((r) => (
+                      <option key={r.id} value={r.id}>{r.nombre}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notas</Label>
+                  <Textarea
+                    placeholder="Detalles de la gestión..."
+                    value={notas} onChange={(e) => setNotas(e.target.value)}
+                    rows={3} className="resize-none"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Próxima acción</Label>
+                  <Input type="date" value={proxima} onChange={(e) => setProxima(e.target.value)} className="h-11" />
+                </div>
+              </>
+            )}
+
+            {/* ── GPS + FOTO: visible en VISITA (cualquier acción) ── */}
+            {formTipo === "visita" && conEvento !== null && (
+              <div className="rounded-xl border border-border bg-secondary/30 p-3 space-y-2">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Evidencia de visita</p>
+                <div className="grid grid-cols-2 gap-2">
+
+                  {/* GPS */}
+                  <div className={cn(
+                    "flex flex-col items-center justify-center gap-1.5 rounded-xl border p-3",
+                    gpsEstado === "ok" ? "border-success/40 bg-success/5"
+                    : gpsEstado === "error" ? "border-destructive/40 bg-destructive/5"
+                    : "border-dashed border-border bg-secondary/40"
+                  )}>
+                    {gpsEstado === "buscando" ? (
+                      <><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      <span className="text-[11px] font-semibold text-muted-foreground text-center">Obteniendo...</span></>
+                    ) : gpsEstado === "ok" && gps ? (
+                      <><MapPin className="h-5 w-5 text-success" />
+                      <span className="text-[11px] font-semibold text-success">Ubicación ✓</span>
+                      <span className="text-[10px] text-muted-foreground text-center">{gps.lat.toFixed(4)}, {gps.lng.toFixed(4)}</span></>
+                    ) : gpsEstado === "error" ? (
+                      <><MapPin className="h-5 w-5 text-destructive" />
+                      <span className="text-[11px] font-semibold text-destructive">Sin GPS</span>
+                      <span className="text-[10px] text-muted-foreground text-center">Habilitá la ubicación</span></>
+                    ) : (
+                      <><MapPin className="h-5 w-5 text-muted-foreground" />
+                      <span className="text-[11px] text-muted-foreground">GPS pendiente</span></>
+                    )}
+                  </div>
+
+                  {/* Foto */}
+                  <div>
+                    <input ref={fotoInputRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={seleccionarFoto} />
+                    {fotoPreview ? (
+                      <div className="relative h-full min-h-[88px] overflow-hidden rounded-xl border border-success/40">
+                        <img src={fotoPreview} alt="Foto de visita" className="h-full w-full object-cover" style={{ minHeight: 88 }} />
+                        <button type="button" onClick={quitarFoto} className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                        <span className="absolute bottom-1 left-1.5 rounded-full bg-black/50 px-1.5 py-0.5 text-[9px] font-bold text-white">✓ Foto lista</span>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => fotoInputRef.current?.click()}
+                        className="flex h-full min-h-[88px] w-full flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-border bg-secondary/40 p-3 text-muted-foreground transition-smooth hover:border-primary/40 hover:text-primary">
+                        <ImagePlus className="h-5 w-5" />
+                        <span className="text-[11px] font-semibold">Sacar foto</span>
+                        <span className="text-[10px]">Evidencia de visita</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {gpsEstado === "error" && (
+                  <p className="text-[11px] text-destructive font-semibold">
+                    ⚠️ La visita se guardará sin coordenadas. El sistema registrará el intento fallido.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <Button
+              onClick={registrarGestion}
+              disabled={guardando || subiendoFoto}
+              className="w-full gap-2 h-11"
+            >
+              {guardando || subiendoFoto
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <Save className="h-4 w-4" />}
+              {subiendoFoto ? "Subiendo foto..." : guardando ? "Guardando..." : "Guardar en bitácora"}
             </Button>
           </section>
         )}
@@ -380,6 +784,7 @@ const EventoDetalle = () => {
             gestiones.map((g) => {
               const tipoInfo = TIPOS_GESTION.find((t) => t.key === g.tipo);
               const Icon = tipoInfo?.icon ?? FileText;
+              const de = g.datos_extra as any;
               return (
                 <div key={g.id} className="rounded-2xl border border-border bg-card p-4 shadow-card">
                   <div className="flex items-start gap-3">
@@ -388,7 +793,16 @@ const EventoDetalle = () => {
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-bold capitalize">{g.tipo}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold capitalize">{g.tipo}</p>
+                          {/* Badge CON/SIN EVENTO */}
+                          {de?.con_evento === true && (
+                            <span className="rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[9px] font-bold uppercase">Con evento</span>
+                          )}
+                          {de?.con_evento === false && (
+                            <span className="rounded-full bg-gray-100 text-gray-600 px-2 py-0.5 text-[9px] font-bold uppercase">Sin evento</span>
+                          )}
+                        </div>
                         <p className="text-[10px] text-muted-foreground shrink-0">{relativeDate(g.created_at)}</p>
                       </div>
                       {g.resultado && (
@@ -396,6 +810,23 @@ const EventoDetalle = () => {
                           <CheckCircle2 className="h-3 w-3" />
                           {g.resultado}
                         </p>
+                      )}
+                      {de?.resultado_real && (
+                        <p className="mt-0.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold">
+                          → {RESULTADOS_EVENTO.find((r) => r.key === de.resultado_real)?.label ?? de.resultado_real}
+                        </p>
+                      )}
+                      {de?.receptor_nombre && (
+                        <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 space-y-0.5">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-primary">📄 Receptor</p>
+                          <p className="text-xs text-foreground">{[de.receptor_nombre, de.receptor_apellido].filter(Boolean).join(" ")}</p>
+                          {de.fecha_entrega && (
+                            <p className="text-xs text-muted-foreground">
+                              Fecha: {new Date(de.fecha_entrega + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "short", year: "numeric" })}
+                            </p>
+                          )}
+                          {de.acta_nro && <p className="text-xs text-muted-foreground">Acta Nro.: {de.acta_nro}</p>}
+                        </div>
                       )}
                       {g.nota && <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">{g.nota}</p>}
                       {g.fecha_inicio && (
@@ -422,7 +853,7 @@ const EventoDetalle = () => {
 };
 
 const InfoRow = ({ icon, label, value, valueClass }: {
-  icon: React.ReactNode; label: string; value: string; valueClass?: string;
+  icon: React.ReactNode; label: string; value: string | null; valueClass?: string;
 }) => (
   <div className="flex items-start gap-3">
     <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">
@@ -430,7 +861,7 @@ const InfoRow = ({ icon, label, value, valueClass }: {
     </span>
     <div className="min-w-0 flex-1">
       <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className={cn("text-sm leading-snug", valueClass ?? "text-foreground")}>{value}</p>
+      <p className={cn("text-sm leading-snug", valueClass ?? "text-foreground")}>{value ?? "—"}</p>
     </div>
   </div>
 );
