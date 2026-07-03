@@ -454,13 +454,12 @@ const Admin = () => {
       return;
     }
 
-    const ids = clientesData.map((c) => c.id);
-
-    // Gestiones recientes (30 días) para calcular alertas
+    // A4: JOIN en lugar de .in() — Admin ve todos los clientes, escala sin límite de URL
     const { data: gestiones } = await supabase
       .from("gestiones")
-      .select("id, cliente_id, tipo, created_at")
-      .in("cliente_id", ids)
+      .select("id, cliente_id, tipo, created_at, clientes!inner(instancia, activo)")
+      .eq("clientes.activo", true)
+      .not("clientes.instancia", "eq", "CENSO")
       .gte("created_at", hace30Dias.toISOString())
       .order("created_at", { ascending: true });
 

@@ -152,16 +152,21 @@ const Inicio = () => {
     const { data: clientesGestion } = await alertasQuery;
 
     if (clientesGestion && clientesGestion.length > 0) {
-      const ids = clientesGestion.map((c) => c.id);
       const hace30Dias = new Date();
       hace30Dias.setDate(hace30Dias.getDate() - 30);
 
-      const { data: gestiones } = await supabase
+      // A4: JOIN en lugar de .in() — escala a >200 clientes sin límite de URL
+      let gQuery = supabase
         .from("gestiones")
-        .select("id, cliente_id, tipo, created_at")
-        .in("cliente_id", ids)
+        .select("id, cliente_id, tipo, created_at, clientes!inner(ejecutivo_id, instancia, activo)")
+        .eq("clientes.activo", true)
+        .not("clientes.instancia", "eq", "CENSO")
         .gte("created_at", hace30Dias.toISOString())
         .order("created_at", { ascending: true });
+
+      if (!canManage) gQuery = gQuery.eq("clientes.ejecutivo_id", user!.id);
+
+      const { data: gestiones } = await gQuery;
 
       const gestionesArr = gestiones ?? [];
       const ahora = new Date();
