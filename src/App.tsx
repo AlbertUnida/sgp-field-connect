@@ -21,6 +21,7 @@ import Alertas from "./pages/Alertas";
 import Perfil from "./pages/Perfil";
 import Cobros from "./pages/Cobros";
 import Scoring from "./pages/Scoring";
+import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -70,6 +71,8 @@ const AppRoutes = () => (
   <Routes>
     <Route path="/" element={<PublicRoute><Login /></PublicRoute>} />
     <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+    {/* /reset-password va FUERA de PublicRoute: el link de recovery crea sesión antes de redirigir */}
+    <Route path="/reset-password" element={<ResetPassword />} />
     <Route path="/app" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
       <Route index element={<Inicio />} />
       <Route path="clientes" element={<Clientes />} />

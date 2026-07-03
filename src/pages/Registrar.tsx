@@ -169,6 +169,7 @@ const Registrar = () => {
       .from("clientes")
       .select("id, numero_cliente, nombre_comercial, ciudad, instancia, tipo_cliente, telefono, email_cliente")
       .eq("activo", true)
+      .not("instancia", "eq", "CENSO")   // M5: no permitir gestionar clientes en CENSO
       .order("nombre_comercial");
 
     if (!canManage) {

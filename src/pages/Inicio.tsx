@@ -69,12 +69,17 @@ const Inicio = () => {
       .maybeSingle();
     setMeta(metaData);
 
-    // Cobros del mes actual
+    // Cobros del mes actual (con límite superior para no contar cobros de meses futuros)
+    const primerDiaMes = `${ANIO_ACTUAL}-${String(MES_ACTUAL).padStart(2, "0")}-01`;
+    const mesSiguiente = MES_ACTUAL === 12 ? 1 : MES_ACTUAL + 1;
+    const anioSiguiente = MES_ACTUAL === 12 ? ANIO_ACTUAL + 1 : ANIO_ACTUAL;
+    const primerDiaSiguiente = `${anioSiguiente}-${String(mesSiguiente).padStart(2, "0")}-01`;
     const { data: cobrosData } = await supabase
       .from("cobros")
       .select("monto")
       .eq("ejecutivo_id", user!.id)
-      .gte("fecha_cobro", `${ANIO_ACTUAL}-${String(MES_ACTUAL).padStart(2, "0")}-01`);
+      .gte("fecha_cobro", primerDiaMes)
+      .lt("fecha_cobro", primerDiaSiguiente);
     const totalCobrado = cobrosData?.reduce((sum, c) => sum + (c.monto || 0), 0) ?? 0;
     setCobradoMes(totalCobrado);
     setCobrosCount(cobrosData?.length ?? 0);
@@ -120,9 +125,8 @@ const Inicio = () => {
 
     // ── KPIs del equipo (solo canManage) ────────────────────
     if (canManage) {
-      const primerDia = `${ANIO_ACTUAL}-${String(MES_ACTUAL).padStart(2, "0")}-01`;
       const [{ data: cobrosEquipo }, { data: metasEquipo }, { count: totalClientesEquipo }, { data: perfiles }] = await Promise.all([
-        supabase.from("cobros").select("monto").gte("fecha_cobro", primerDia),
+        supabase.from("cobros").select("monto").gte("fecha_cobro", primerDiaMes).lt("fecha_cobro", primerDiaSiguiente),
         supabase.from("metas").select("monto_meta").eq("mes", MES_ACTUAL).eq("anio", ANIO_ACTUAL),
         supabase.from("clientes").select("id", { count: "exact", head: true }).eq("activo", true).not("instancia", "eq", "CENSO"),
         supabase.from("profiles").select("id").eq("rol", "ejecutivo").eq("activo", true),

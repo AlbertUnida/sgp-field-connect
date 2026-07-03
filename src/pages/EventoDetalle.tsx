@@ -197,7 +197,7 @@ const EventoDetalle = () => {
   const cargarGestiones = async () => {
     const { data } = await supabase
       .from("gestiones")
-      .select("id, tipo, resultado, nota, fecha_inicio, created_at, datos_extra, ejecutivo:ejecutivo_id(nombre, apellido)")
+      .select("id, tipo, resultado, resultado_id, nota, fecha_inicio, created_at, datos_extra, ejecutivo:ejecutivo_id(nombre, apellido)")
       .eq("evento_id", eventoId)
       .order("created_at", { ascending: false });
     setGestiones(data ?? []);
