@@ -4,7 +4,7 @@ import {
   ArrowLeft, Car, PhoneCall, Mail, MessageCircle, Calendar,
   Building2, FileText, Loader2, CheckCircle2, Clock,
   ChevronDown, ChevronUp, Save, Pencil, User,
-  MapPin, ImagePlus, Trash2, AlertCircle,
+  MapPin, ImagePlus, Trash2, AlertCircle, Camera,
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ interface Gestion {
   tipo: string;
   resultado: string | null;
   nota: string | null;
+  foto_url: string | null;
   fecha_inicio: string | null;
   created_at: string;
   datos_extra: Record<string, unknown> | null;
@@ -197,7 +198,7 @@ const EventoDetalle = () => {
   const cargarGestiones = async () => {
     const { data } = await supabase
       .from("gestiones")
-      .select("id, tipo, resultado, resultado_id, nota, fecha_inicio, created_at, datos_extra, ejecutivo:ejecutivo_id(nombre, apellido)")
+      .select("id, tipo, resultado, resultado_id, nota, foto_url, fecha_inicio, created_at, datos_extra, ejecutivo:ejecutivo_id(nombre, apellido)")
       .eq("evento_id", eventoId)
       .order("created_at", { ascending: false });
     setGestiones(data ?? []);
@@ -970,6 +971,7 @@ const EventoDetalle = () => {
                         </div>
                       )}
                       {g.nota && <p className="mt-1.5 text-xs text-muted-foreground leading-relaxed">{g.nota}</p>}
+                      {g.foto_url && <FotoGestion url={g.foto_url} />}
                       {g.fecha_inicio && (
                         <p className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
                           <Clock className="h-3 w-3" />
@@ -990,6 +992,30 @@ const EventoDetalle = () => {
         </section>
       </div>
     </>
+  );
+};
+
+// A3: Resuelve signed URL para bucket privado (soporta path o URL legada)
+const FotoGestion = ({ url }: { url: string }) => {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+  useEffect(() => {
+    const resolve = async () => {
+      let path = url;
+      if (url.startsWith("http")) {
+        const match = url.match(/\/gestiones-fotos\/(.+?)(\?|$)/);
+        path = match ? decodeURIComponent(match[1]) : url;
+      }
+      const { data } = await supabase.storage.from("gestiones-fotos").createSignedUrl(path, 3600);
+      if (data?.signedUrl) setSignedUrl(data.signedUrl);
+    };
+    resolve();
+  }, [url]);
+  if (!signedUrl) return <div className="mt-2.5 w-full h-28 rounded-xl bg-muted animate-pulse" />;
+  return (
+    <a href={signedUrl} target="_blank" rel="noopener noreferrer" className="mt-2.5 block">
+      <img src={signedUrl} alt="Evidencia de visita" className="w-full rounded-xl object-cover border border-border" style={{ maxHeight: 200 }} />
+      <span className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground"><Camera className="h-3 w-3" /> Ver foto completa</span>
+    </a>
   );
 };
 

@@ -54,7 +54,7 @@ const Inicio = () => {
   useEffect(() => {
     if (!user) return;
     cargarDatos();
-  }, [user]);
+  }, [user, canManage]); // canManage puede llegar después del user (perfil async)
 
   const cargarDatos = async () => {
     setLoading(true);

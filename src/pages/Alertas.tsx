@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, AlertTriangle, Phone, MapPin, ChevronRight, Loader2, Clock } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/lib/supabaseClient";
@@ -32,6 +32,7 @@ function addBusinessHours(start: Date, hours: number): Date {
 const Alertas = () => {
   const [params] = useSearchParams();
   const tipo = params.get("tipo") ?? "visitas"; // "visitas" | "contactos"
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { canManage } = useProfile();
 
@@ -41,7 +42,7 @@ const Alertas = () => {
   useEffect(() => {
     if (!user) return;
     cargarAlertas();
-  }, [user, tipo]);
+  }, [user, tipo, canManage]); // canManage puede llegar después del user (perfil async)
 
   const cargarAlertas = async () => {
     setLoading(true);
@@ -163,9 +164,9 @@ const Alertas = () => {
     <>
       <header className="gradient-hero text-primary-foreground px-4 pb-5 pt-4">
         <div className="flex items-center justify-between">
-          <Link to="/app" className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10">
+          <button onClick={() => navigate(-1)} className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/10">
             <ArrowLeft className="h-4 w-4" />
-          </Link>
+          </button>
           <span className={cn(
             "rounded-full px-3 py-1 text-[11px] font-bold uppercase",
             esVisitas ? "bg-destructive/30 text-white" : "bg-warning/30 text-white"
