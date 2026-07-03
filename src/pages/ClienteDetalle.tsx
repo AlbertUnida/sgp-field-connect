@@ -2278,19 +2278,7 @@ const ClienteDetalle = () => {
                       </div>
                     )}
 
-                    {g.foto_url && (
-                      <a href={g.foto_url} target="_blank" rel="noopener noreferrer" className="mt-2.5 block">
-                        <img
-                          src={g.foto_url}
-                          alt="Evidencia de visita"
-                          className="w-full rounded-xl object-cover border border-border"
-                          style={{ maxHeight: 200 }}
-                        />
-                        <span className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
-                          <Camera className="h-3 w-3" /> Ver foto completa
-                        </span>
-                      </a>
-                    )}
+                    {g.foto_url && <FotoGestion url={g.foto_url} />}
 
                     <div className="mt-2.5 flex items-center justify-between text-[11px]">
                       {g.resultado && (
@@ -2331,5 +2319,44 @@ const InfoRow = ({ icon, label, value, valueClass }: {
     </div>
   </div>
 );
+
+// A3: Muestra fotos desde bucket privado generando signed URL temporal (1h)
+const FotoGestion = ({ url }: { url: string }) => {
+  const [signedUrl, setSignedUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const resolve = async () => {
+      // Soporta paths nuevos ("userId/timestamp.jpg") y URLs legacy completas
+      let path = url;
+      if (url.startsWith("http")) {
+        const match = url.match(/\/gestiones-fotos\/(.+?)(\?|$)/);
+        path = match ? decodeURIComponent(match[1]) : url;
+      }
+      const { data } = await supabase.storage
+        .from("gestiones-fotos")
+        .createSignedUrl(path, 3600);
+      if (data?.signedUrl) setSignedUrl(data.signedUrl);
+    };
+    resolve();
+  }, [url]);
+
+  if (!signedUrl) return (
+    <div className="mt-2.5 w-full h-28 rounded-xl bg-muted animate-pulse" />
+  );
+
+  return (
+    <a href={signedUrl} target="_blank" rel="noopener noreferrer" className="mt-2.5 block">
+      <img
+        src={signedUrl}
+        alt="Evidencia de visita"
+        className="w-full rounded-xl object-cover border border-border"
+        style={{ maxHeight: 200 }}
+      />
+      <span className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
+        <Camera className="h-3 w-3" /> Ver foto completa
+      </span>
+    </a>
+  );
+};
 
 export default ClienteDetalle;

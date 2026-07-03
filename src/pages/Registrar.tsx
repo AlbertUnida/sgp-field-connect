@@ -404,8 +404,7 @@ const Registrar = () => {
         .from("gestiones-fotos")
         .upload(path, fotoFile, { contentType: fotoFile.type, upsert: false });
       if (!uploadError) {
-        const { data: urlData } = supabase.storage.from("gestiones-fotos").getPublicUrl(path);
-        fotoUrl = urlData.publicUrl;
+        fotoUrl = path; // A3: guardar path en lugar de URL pública (bucket privado)
       } else {
         toast.error("No se pudo subir la foto — se guardará sin imagen");
       }
