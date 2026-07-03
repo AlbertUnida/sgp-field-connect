@@ -975,13 +975,17 @@ const ClienteDetalle = () => {
               icon={<Clock className="h-4 w-4" />}
               label="Vencimiento licencia"
               value={new Date(cliente.fecha_vencimiento + "T00:00:00").toLocaleDateString("es-PY", { day: "2-digit", month: "long", year: "numeric" })}
-              valueClass={
-                new Date(cliente.fecha_vencimiento) < new Date()
+              valueClass={(() => {
+                // M4: parsear como hora local para evitar el bug de UTC (vence a las 21h del día anterior)
+                const fv = new Date(cliente.fecha_vencimiento + "T00:00:00");
+                const ahora = new Date();
+                const en7Dias = new Date(ahora.getTime() + 7 * 86_400_000);
+                return fv < ahora
                   ? "font-bold text-destructive"
-                  : new Date(cliente.fecha_vencimiento) <= new Date(Date.now() + 7 * 86_400_000)
+                  : fv <= en7Dias
                   ? "font-bold text-warning"
-                  : "font-semibold text-success"
-              }
+                  : "font-semibold text-success";
+              })()}
             />
           )}
           {cliente.notas && (

@@ -523,7 +523,8 @@ const Admin = () => {
 
       // Próximos vencimientos (licencia vence en 7 días)
       if (c.fecha_vencimiento) {
-        const fv = new Date(c.fecha_vencimiento);
+        // M4: parsear como hora local para evitar bug de UTC (vence a las 21h del día anterior)
+        const fv = new Date(c.fecha_vencimiento + "T00:00:00");
         if (fv >= hoy && fv <= en7Dias) ejMap[ejId].proxVenc++;
       }
     }
