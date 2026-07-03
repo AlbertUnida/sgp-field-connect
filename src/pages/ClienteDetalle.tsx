@@ -506,18 +506,19 @@ const ClienteDetalle = () => {
 
     setGuardandoCobro(true);
 
-    const { error } = await supabase.from("cobros").insert({
-      cliente_id: parseInt(id!),
-      ejecutivo_id: cliente!.ejecutivo_id,
-      registrado_por: user!.id,
-      monto: parseMontoPYG(cobro.monto) ?? 0,
-      metodo_pago: cobro.metodo_pago,
-      modalidad: cobro.modalidad,
-      fecha_cobro: cobro.fecha_cobro,
-      periodo_desde: cobro.periodo_desde || null,
-      periodo_hasta: cobro.periodo_hasta || null,
-      referencia: cobro.referencia || null,
-      notas: cobro.notas || null,
+    // A1: operación atómica via RPC (insert cobro + update cliente + historial en una transacción)
+    const { error } = await supabase.rpc("registrar_cobro_local", {
+      p_cliente_id:     parseInt(id!),
+      p_ejecutivo_id:   cliente!.ejecutivo_id,
+      p_registrado_por: user!.id,
+      p_monto:          parseMontoPYG(cobro.monto) ?? 0,
+      p_metodo_pago:    cobro.metodo_pago,
+      p_modalidad:      cobro.modalidad,
+      p_fecha_cobro:    cobro.fecha_cobro,
+      p_periodo_desde:  cobro.periodo_desde || null,
+      p_periodo_hasta:  cobro.periodo_hasta || null,
+      p_referencia:     cobro.referencia || null,
+      p_notas:          cobro.notas || null,
     });
 
     if (error) {
@@ -526,38 +527,11 @@ const ClienteDetalle = () => {
       return;
     }
 
-    // Calcular fecha_vencimiento según días de vigencia del rubro
-    const { data: rubroInfo } = await supabase
-      .from("clientes")
-      .select("rubro_rel:rubro_id(dias_vigencia)")
-      .eq("id", id)
-      .single();
-    const diasVigencia = (rubroInfo?.rubro_rel as any)?.dias_vigencia ?? 30;
-    const fechaBase = new Date(cobro.fecha_cobro);
-    fechaBase.setDate(fechaBase.getDate() + diasVigencia);
-    const fechaVencimiento = fechaBase.toISOString().split("T")[0];
-
-    // Mover cliente a COBRANZAS y guardar vencimiento
-    const instanciaAnterior = cliente!.instancia ?? "COMERCIAL";
-    await supabase.from("clientes")
-      .update({ instancia: "COBRANZAS", fecha_vencimiento: fechaVencimiento })
-      .eq("id", id);
-
-    // Registrar transición en historial
-    await supabase.from("historial_instancias").insert({
-      cliente_id: parseInt(id!),
-      instancia_anterior: instanciaAnterior,
-      instancia_nueva: "COBRANZAS",
-      ejecutivo_id: user!.id,
-      notas: `Cobro registrado: ${cobro.modalidad} — ${cobro.metodo_pago}`,
-    });
-
     toast.success("Cobro registrado — cliente pasa a COBRANZAS ✅");
     setCobro({ monto: "", metodo_pago: "efectivo", modalidad: "mensual",
       fecha_cobro: hoy, periodo_desde: hoy, periodo_hasta: "", referencia: "", notas: "" });
     setShowCobro(false);
-    await Promise.all([cargarCliente(), cargarCobros()]);
-    await cargarHistorial();
+    await Promise.all([cargarCliente(), cargarCobros(), cargarHistorial()]);
     setGuardandoCobro(false);
   };
 
@@ -604,36 +578,27 @@ const ClienteDetalle = () => {
       .map((ev) => `EV-${String(ev.numero_evento).padStart(3, "0")}`)
       .join(", ");
 
-    const { error } = await supabase.from("cobros").insert({
-      cliente_id: parseInt(id!),
-      ejecutivo_id: cliente!.ejecutivo_id,
-      registrado_por: user!.id,
-      monto: montoNum,
-      metodo_pago: cobroEv.metodo_pago,
-      modalidad: cobroEv.modalidad,
-      fecha_cobro: cobroEv.fecha_cobro,
-      razon_social_factura: cobroEv.razon_social_factura || null,
-      ruc_factura: cobroEv.ruc_factura || null,
-      lugar_evento: cobroEv.lugar_evento || null,
-      direccion_evento: cobroEv.direccion_evento || null,
-      email_contacto: cobroEv.email_contacto || null,
-      telefono_contacto: cobroEv.telefono_contacto || null,
-      referencia: cobroEv.referencia || null,
-      eventos_ids: eventosSelArr,
-      notas: cobroEv.notas || null,
+    // A1: operación atómica via RPC (insert cobro + cerrar eventos en una transacción)
+    const { error } = await supabase.rpc("registrar_cobro_eventos", {
+      p_cliente_id:           parseInt(id!),
+      p_ejecutivo_id:         cliente!.ejecutivo_id,
+      p_registrado_por:       user!.id,
+      p_monto:                montoNum,
+      p_metodo_pago:          cobroEv.metodo_pago,
+      p_modalidad:            cobroEv.modalidad,
+      p_fecha_cobro:          cobroEv.fecha_cobro,
+      p_eventos_ids:          eventosSelArr,
+      p_razon_social_factura: cobroEv.razon_social_factura || null,
+      p_ruc_factura:          cobroEv.ruc_factura || null,
+      p_lugar_evento:         cobroEv.lugar_evento || null,
+      p_direccion_evento:     cobroEv.direccion_evento || null,
+      p_email_contacto:       cobroEv.email_contacto || null,
+      p_telefono_contacto:    cobroEv.telefono_contacto || null,
+      p_referencia:           cobroEv.referencia || null,
+      p_notas:                cobroEv.notas || null,
     });
 
     if (error) { toast.error("Error al registrar cobro: " + error.message); setGuardandoCobroEv(false); return; }
-
-    // Marcar los eventos cobrados como cerrado + moverlos a COBRANZAS
-    const { error: errUpdate } = await supabase
-      .from("eventos_agenda")
-      .update({ estado: "cerrado", instancia: "COBRANZAS" })
-      .in("id", eventosSelArr);
-
-    if (errUpdate) {
-      toast.error("Cobro registrado, pero no se pudieron cerrar los eventos: " + errUpdate.message);
-    }
 
     // El cliente (venue) siempre queda en COMERCIAL — solo los eventos individuales pasan a COBRANZAS
 
