@@ -248,20 +248,14 @@ const Admin = () => {
     setCreandoUser(true);
 
     try {
-      // ── 1. Crear cliente temporal aislado para no reemplazar la sesión del admin ──
-      const { createClient } = await import("@supabase/supabase-js");
-      const tempClient = createClient(
-        import.meta.env.VITE_SUPABASE_URL as string,
-        import.meta.env.VITE_SUPABASE_ANON_KEY as string,
-        { auth: { storageKey: "sgp-admin-signup", persistSession: false } }
-      );
-
-      const { data, error } = await tempClient.auth.signUp({
-        email: nuevoEmail.trim().toLowerCase(),
-        password: nuevaPassword,
-        options: {
-          data: { full_name: `${nuevoNombre} ${nuevoApellido}`.trim() },
-          emailRedirectTo: window.location.origin,
+      // C2: Usar Edge Function con service_role en lugar de signUp() público
+      const { data, error } = await supabase.functions.invoke("crear-usuario", {
+        body: {
+          email: nuevoEmail.trim().toLowerCase(),
+          password: nuevaPassword,
+          nombre: nuevoNombre.trim(),
+          apellido: nuevoApellido.trim() || null,
+          rol: nuevoRol,
         },
       });
 
@@ -271,25 +265,14 @@ const Admin = () => {
         return;
       }
 
-      // Supabase devuelve data.user con identities=[] si el email ya está registrado
-      if (!data.user || data.user.identities?.length === 0) {
-        toast.error("Este email ya está registrado en el sistema");
+      if (data?.error) {
+        toast.error(data.error);
         setCreandoUser(false);
         return;
       }
 
-      // ── 2. Guardar perfil vía función SQL con SECURITY DEFINER (bypasa RLS) ──
-      const { error: profileError } = await supabase.rpc("admin_set_user_profile", {
-        target_user_id: data.user.id,
-        p_nombre: nuevoNombre.trim(),
-        p_apellido: nuevoApellido.trim() || null,
-        p_rol: nuevoRol,
-        p_email: nuevoEmail.trim().toLowerCase(),
-      });
-
-      if (profileError) {
-        console.error("Error perfil:", profileError);
-        toast.warning(`Usuario creado pero el perfil no se configuró: ${profileError.message}. Ejecutá el SQL de admin_set_user_profile en Supabase.`);
+      if (data?.warning) {
+        toast.warning(`Usuario creado pero el perfil no se configuró: ${data.warning}`);
       } else {
         toast.success(`✅ Usuario ${nuevoNombre} creado. Ya puede iniciar sesión con la contraseña asignada.`);
       }
