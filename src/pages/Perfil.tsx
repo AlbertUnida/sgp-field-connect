@@ -253,7 +253,7 @@ const Perfil = () => {
                     type={showPass ? "text" : "password"}
                     value={nuevaPass}
                     onChange={(e) => setNuevaPass(e.target.value)}
-                    placeholder="Mínimo 6 caracteres"
+                    placeholder="Mínimo 8 caracteres"
                     className="h-11 pr-11"
                   />
                   <button

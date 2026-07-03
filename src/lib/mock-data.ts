@@ -126,6 +126,23 @@ export const EJECUTIVOS_PERFORMANCE = [
 export const formatPYG = (n: number) =>
   new Intl.NumberFormat("es-PY", { style: "currency", currency: "PYG", maximumFractionDigits: 0 }).format(n);
 
+/**
+ * Parsea un monto entero en PYG ingresado por el usuario.
+ * Acepta separadores de miles: "150.000" → 150000, "1.500.000" → 1500000
+ * Rechaza decimales: "150,5" → null (coma decimal no válida en PYG)
+ * Rechaza texto o vacío → null
+ */
+export function parseMontoPYG(value: string | null | undefined): number | null {
+  if (!value) return null;
+  // Eliminar puntos (separador de miles en PY) y espacios
+  const limpio = value.replace(/[\s.]/g, "").trim();
+  if (!limpio) return null;
+  // Solo dígitos permitidos (rechaza coma decimal y cualquier otro caracter)
+  if (!/^\d+$/.test(limpio)) return null;
+  const n = parseInt(limpio, 10);
+  return isNaN(n) || n <= 0 ? null : n;
+}
+
 export const formatDate = (iso: string) =>
   new Intl.DateTimeFormat("es-PY", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(iso));
 

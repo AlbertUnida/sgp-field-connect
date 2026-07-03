@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { parseMontoPYG } from "@/lib/mock-data";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Save, Loader2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
@@ -143,14 +144,14 @@ const EditarCliente = () => {
       barrio: form.barrio.trim() || null,
       direccion: form.direccion.trim() || null,
       calle_secundaria: form.calle_secundaria.trim() || null,
-      tarifa_mensual: form.tarifa_mensual ? parseInt(form.tarifa_mensual.replace(/\D/g, "")) : null,
+      tarifa_mensual: parseMontoPYG(form.tarifa_mensual),
       notas: form.notas.trim() || null,
       categoria_id: form.categoria_id || null,
       rubro_id: form.rubro_id || null,
       sub_rubro_id: form.sub_rubro_id || null,
       // Campos del venue
       nombre_salon: tipoCliente === "evento" ? form.nombre_salon.trim() || null : null,
-      capacidad: tipoCliente === "evento" && form.capacidad ? parseInt(form.capacidad.replace(/\D/g, "")) || null : null,
+      capacidad: tipoCliente === "evento" ? parseMontoPYG(form.capacidad) : null,
     }, { count: "exact" }).eq("id", id);
 
     if (error) {

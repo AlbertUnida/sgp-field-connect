@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
-import { formatPYG } from "@/lib/mock-data";
+import { formatPYG, parseMontoPYG } from "@/lib/mock-data";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -320,7 +320,7 @@ const ClienteDetalle = () => {
       nombre_evento: formEvento.nombre_evento.trim(),
       fecha_evento: formEvento.fecha_evento,
       tipo_evento: formEvento.tipo_evento,
-      tarifa_evento: formEvento.tarifa_evento ? parseInt(formEvento.tarifa_evento.replace(/\D/g, "")) : null,
+      tarifa_evento: parseMontoPYG(formEvento.tarifa_evento),
       nombre_salon: formEvento.nombre_salon.trim() || null,
       notas: formEvento.notas.trim() || null,
       estado: "prospecto",
@@ -510,7 +510,7 @@ const ClienteDetalle = () => {
       cliente_id: parseInt(id!),
       ejecutivo_id: cliente!.ejecutivo_id,
       registrado_por: user!.id,
-      monto: parseFloat(cobro.monto.replace(/\D/g, "")),
+      monto: parseMontoPYG(cobro.monto) ?? 0,
       metodo_pago: cobro.metodo_pago,
       modalidad: cobro.modalidad,
       fecha_cobro: cobro.fecha_cobro,
@@ -597,7 +597,7 @@ const ClienteDetalle = () => {
 
     setGuardandoCobroEv(true);
 
-    const montoNum = parseFloat(cobroEv.monto.replace(/\D/g, ""));
+    const montoNum = parseMontoPYG(cobroEv.monto) ?? 0;
     const eventosSelArr = Array.from(eventosSeleccionados);
     const eventosNombres = eventosAgenda
       .filter((ev) => eventosSeleccionados.has(ev.id))

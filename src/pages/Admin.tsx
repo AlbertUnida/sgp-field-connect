@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useProfile, Profile } from "@/hooks/useProfile";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { formatPYG } from "@/lib/mock-data";
+import { formatPYG, parseMontoPYG } from "@/lib/mock-data";
 
 interface EjecutivoConMeta extends Profile {
   meta_actual: number | null;
@@ -201,7 +201,7 @@ const Admin = () => {
   };
 
   const guardarMeta = async (ejecutivoId: string) => {
-    const monto = parseInt(metas[ejecutivoId]?.replace(/\D/g, "") || "0");
+    const monto = parseMontoPYG(metas[ejecutivoId] ?? "") ?? 0;
     if (!monto || monto <= 0) { toast.error("Ingresá un monto válido"); return; }
     setSaving(ejecutivoId);
     const { error } = await supabase.from("metas").upsert(

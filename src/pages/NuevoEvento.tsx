@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Save, Loader2, CalendarDays } from "lucide-react";
+import { parseMontoPYG } from "@/lib/mock-data";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,9 +64,9 @@ const NuevoEvento = () => {
       nombre_evento: form.nombre_evento.trim(),
       fecha_evento: form.fecha_evento,
       tipo_evento: form.tipo_evento,
-      tarifa_evento: form.tarifa_evento ? parseInt(form.tarifa_evento.replace(/\D/g, "")) : null,
+      tarifa_evento: parseMontoPYG(form.tarifa_evento),
       nombre_salon: form.nombre_salon.trim() || null,
-      capacidad: form.capacidad ? parseInt(form.capacidad.replace(/\D/g, "")) || null : null,
+      capacidad: parseMontoPYG(form.capacidad),
       notas: form.notas.trim() || null,
       estado: "prospecto",
       ejecutivo_id: user!.id,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Save, Loader2 } from "lucide-react";
+import { parseMontoPYG } from "@/lib/mock-data";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,7 +92,7 @@ const NuevoCliente = () => {
       barrio: form.barrio.trim() || null,
       direccion: form.direccion.trim() || null,
       calle_secundaria: form.calle_secundaria.trim() || null,
-      tarifa_mensual: form.tipo_cliente === "local" && form.monto_licencia ? parseInt(form.monto_licencia.replace(/\D/g, "")) : null,
+      tarifa_mensual: form.tipo_cliente === "local" ? parseMontoPYG(form.monto_licencia) : null,
       categoria_id: form.tipo_cliente === "local" ? form.categoria_id : null,
       rubro_id: form.tipo_cliente === "local" ? form.rubro_id : null,
       sub_rubro_id: form.tipo_cliente === "local" ? (form.sub_rubro_id || null) : null,
