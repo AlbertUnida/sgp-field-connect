@@ -244,7 +244,7 @@ const Admin = () => {
 
   const crearUsuario = async () => {
     if (!nuevoEmail || !nuevaPassword || !nuevoNombre) { toast.error("Completá nombre, email y contraseña"); return; }
-    if (nuevaPassword.length < 6) { toast.error("La contraseña debe tener al menos 6 caracteres"); return; }
+    if (nuevaPassword.length < 8) { toast.error("La contraseña debe tener al menos 8 caracteres"); return; }
     setCreandoUser(true);
 
     try {
@@ -728,7 +728,7 @@ const Admin = () => {
                   </div>
                 </div>
                 <div className="space-y-1.5"><Label>Email <span className="text-destructive">*</span></Label><Input type="email" placeholder="ejecutivo@sgp.org.py" value={nuevoEmail} onChange={(e) => setNuevoEmail(e.target.value)} className="h-11" /></div>
-                <div className="space-y-1.5"><Label>Contraseña inicial <span className="text-destructive">*</span></Label><Input type="password" placeholder="Mínimo 6 caracteres" value={nuevaPassword} onChange={(e) => setNuevaPassword(e.target.value)} className="h-11" /></div>
+                <div className="space-y-1.5"><Label>Contraseña inicial <span className="text-destructive">*</span></Label><Input type="password" placeholder="Mínimo 8 caracteres" value={nuevaPassword} onChange={(e) => setNuevaPassword(e.target.value)} className="h-11" /></div>
                 <div className="space-y-1.5">
                   <Label>Rol</Label>
                   <div className="grid grid-cols-3 gap-2">

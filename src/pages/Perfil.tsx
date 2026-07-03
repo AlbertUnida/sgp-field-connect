@@ -65,7 +65,7 @@ const Perfil = () => {
 
   const cambiarPassword = async () => {
     if (!nuevaPass) { toast.error("Ingresá la nueva contraseña"); return; }
-    if (nuevaPass.length < 6) { toast.error("Mínimo 6 caracteres"); return; }
+    if (nuevaPass.length < 8) { toast.error("La contraseña debe tener al menos 8 caracteres"); return; }
     if (nuevaPass !== confirmarPass) { toast.error("Las contraseñas no coinciden"); return; }
     setGuardandoPass(true);
     const { error } = await supabase.auth.updateUser({ password: nuevaPass });
