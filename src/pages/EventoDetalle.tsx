@@ -73,12 +73,12 @@ const TIPOS_EVENTO_LABEL: Record<string, string> = {
   social: "Social / Privado", musical: "Musical / Show", otro: "Otro",
 };
 
-// Resultados específicos para visita de evento
+// Resultados específicos para visita de evento (con score para lead scoring)
 const RESULTADOS_EVENTO = [
-  { key: "no_recibe_no_firma",        label: "No recibe, No firma" },
-  { key: "no_recibe_no_identifica",   label: "No recibe, No se identifica" },
-  { key: "recibe_no_firma",           label: "Recibe y no firma" },
-  { key: "evento_declarado",          label: "Evento Declarado" },
+  { key: "no_recibe_no_identifica",   label: "No recibe, No se identifica", score: -2 },
+  { key: "no_recibe_no_firma",        label: "No recibe, No firma",          score: -1 },
+  { key: "recibe_no_firma",           label: "Recibe y no firma",            score:  3 },
+  { key: "evento_declarado",          label: "Evento Declarado",             score: 10 },
 ];
 
 const EventoDetalle = () => {
@@ -351,6 +351,9 @@ const EventoDetalle = () => {
           datosExtra.acta_nro = actaNro.trim() || null;
         }
         datosExtra.resultado_real = resultadoReal || null;
+        // M1: guardar score para lead scoring (igual que locales)
+        const rrEvento = RESULTADOS_EVENTO.find((r) => r.key === resultadoReal);
+        datosExtra.score = rrEvento?.score ?? null;
       }
     } else if (formTipo === "llamada" || formTipo === "whatsapp") {
       datosExtra.contacto_nombre = contactoNombre.trim() || null;
