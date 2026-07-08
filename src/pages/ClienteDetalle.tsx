@@ -2280,12 +2280,6 @@ const ClienteDetalle = () => {
                       </span>
                     </div>
 
-                    {(g as any).proxima_accion && (
-                      <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-warning/10 px-2.5 py-1.5 text-[11px] text-warning">
-                        <Calendar className="h-3 w-3" />
-                        Próxima acción: {new Date((g as any).proxima_accion).toLocaleDateString("es-PY", { day: "2-digit", month: "short" })}
-                      </div>
-                    )}
                   </div>
                 );
               })}
