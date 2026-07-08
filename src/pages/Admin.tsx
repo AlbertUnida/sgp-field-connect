@@ -14,6 +14,7 @@ import { useProfile, Profile } from "@/hooks/useProfile";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { formatPYG, parseMontoPYG } from "@/lib/mock-data";
+import { addBusinessHours } from "@/lib/utils-field";
 
 interface EjecutivoConMeta extends Profile {
   meta_actual: number | null;
@@ -77,17 +78,6 @@ interface SeguimientoEj {
   visitasVencidas: number;
   contactosVencidos: number;
   proximosVencimientos: number;
-}
-
-function addBusinessHours(start: Date, hours: number): Date {
-  const result = new Date(start);
-  let remaining = hours;
-  while (remaining > 0) {
-    result.setTime(result.getTime() + 3_600_000);
-    const day = result.getDay();
-    if (day !== 0 && day !== 6) remaining--;
-  }
-  return result;
 }
 
 const Admin = () => {

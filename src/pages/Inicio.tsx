@@ -7,22 +7,11 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useProfile } from "@/hooks/useProfile";
 import { useAuth } from "@/contexts/AuthContext";
+import { addBusinessHours } from "@/lib/utils-field";
 
 const MES_ACTUAL = new Date().getMonth() + 1;
 const ANIO_ACTUAL = new Date().getFullYear();
 const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-
-// Agrega horas hábiles (lun–vie) a una fecha
-function addBusinessHours(start: Date, hours: number): Date {
-  const result = new Date(start);
-  let remaining = hours;
-  while (remaining > 0) {
-    result.setTime(result.getTime() + 3_600_000);
-    const day = result.getDay();
-    if (day !== 0 && day !== 6) remaining--;
-  }
-  return result;
-}
 
 const Inicio = () => {
   const { user } = useAuth();

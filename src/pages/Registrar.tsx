@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { capturarGPSPromise, aplicarMarcaDeAgua, filtrarTiposResultado } from "@/lib/utils-field";
 
 interface ClienteOpcion {
   id: string;
@@ -107,34 +108,14 @@ const Registrar = () => {
   const resultadoSeleccionado = tiposResultado.find((t) => t.id === resultadoId) ?? null;
   const tipoFormulario = resultadoSeleccionado?.tipo_formulario ?? null;
 
-  // Filtrado secuencial de nota_reclamo + filtro por cartera del cliente seleccionado
-  const tiposResultadoFiltrados = (() => {
-    const tipoCarteraCliente = clienteSeleccionado?.tipo_cliente ?? "local";
-    // Filtrar por cartera: mostrar solo los que aplican a este tipo de cliente
-    const porCartera = tiposResultado.filter(
-      (t) => t.tipo_cartera === "ambos" || t.tipo_cartera === tipoCarteraCliente
-    );
-    const notaReclamo = porCartera
-      .filter((t) => t.tipo_formulario === "nota_reclamo")
-      .sort((a, b) => a.orden - b.orden);
-    const proxPendiente = notaReclamo.find((t) => !resultadosCompletadosCliente.has(t.id));
-    return [
-      ...porCartera.filter((t) => t.tipo_formulario !== "nota_reclamo"),
-      ...(proxPendiente ? [proxPendiente] : []),
-    ];
-  })();
+  // Filtrado secuencial de nota_reclamo + filtro por cartera (M6: lógica en utils-field.ts)
+  const tiposResultadoFiltrados = filtrarTiposResultado(
+    tiposResultado,
+    clienteSeleccionado?.tipo_cliente ?? "local",
+    resultadosCompletadosCliente
+  );
 
-  // Promesa de GPS reutilizable
-  const capturarGPSPromise = (): Promise<{ lat: number; lng: number } | null> => {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) { resolve(null); return; }
-      navigator.geolocation.getCurrentPosition(
-        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    });
-  };
+  // capturarGPSPromise importado de @/lib/utils-field (M6)
 
   // Al cambiar canal: resetear campos de tarea/resultado y GPS
   useEffect(() => {
@@ -283,62 +264,7 @@ const Registrar = () => {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Marca de agua en foto
-  const aplicarMarcaDeAgua = (file: File, nombre: string): Promise<File> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(file);
-
-      img.onload = () => {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(img, 0, 0);
-
-        const ahora = new Date();
-        const fecha = ahora.toLocaleDateString("es-PY", { day: "2-digit", month: "2-digit", year: "numeric" });
-        const hora = ahora.toLocaleTimeString("es-PY", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-        const linea1 = nombre.toUpperCase();
-        const linea2 = `${fecha}  •  ${hora}  •  SGP Paraguay`;
-
-        const fontSize = Math.max(Math.round(img.width * 0.038), 22);
-        const smallSize = Math.round(fontSize * 0.72);
-        const padding = Math.round(fontSize * 0.7);
-        const barHeight = fontSize + smallSize + padding * 2.5;
-
-        ctx.fillStyle = "rgba(0, 0, 0, 0.70)";
-        ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
-
-        ctx.fillStyle = "#3b82f6";
-        ctx.fillRect(0, img.height - barHeight, img.width, Math.round(fontSize * 0.18));
-
-        ctx.font = `bold ${fontSize}px Arial, sans-serif`;
-        ctx.fillStyle = "#ffffff";
-        ctx.textBaseline = "top";
-        ctx.textAlign = "left";
-        ctx.fillText(linea1, padding, img.height - barHeight + padding);
-
-        ctx.font = `${smallSize}px Arial, sans-serif`;
-        ctx.fillStyle = "rgba(255,255,255,0.75)";
-        ctx.fillText(linea2, padding, img.height - barHeight + padding + fontSize + Math.round(smallSize * 0.3));
-
-        URL.revokeObjectURL(objectUrl);
-
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) { resolve(file); return; }
-            resolve(new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" }));
-          },
-          "image/jpeg",
-          0.92
-        );
-      };
-
-      img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
-      img.src = objectUrl;
-    });
-  };
+  // aplicarMarcaDeAgua importado de @/lib/utils-field (M6)
 
   const seleccionarFoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

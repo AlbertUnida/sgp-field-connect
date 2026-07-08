@@ -18,6 +18,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { formatPYG, parseMontoPYG } from "@/lib/mock-data";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { filtrarTiposResultado } from "@/lib/utils-field";
 
 interface Cliente {
   id: number;
@@ -254,22 +255,12 @@ const ClienteDetalle = () => {
   const tipoFormulario = resultadoSeleccionado?.tipo_formulario ?? null;
 
   // Filtrado por cartera + filtrado secuencial de nota_reclamo
-  const tiposResultadoFiltrados = (() => {
-    const tipoCarteraCliente = cliente?.tipo_cliente ?? "local";
-    // Filtrar por cartera: mostrar solo los que aplican a este tipo de cliente
-    const porCartera = tiposResultado.filter(
-      (t) => t.tipo_cartera === "ambos" || t.tipo_cartera === tipoCarteraCliente
-    );
-    const completedIds = new Set<string>(gestiones.map((g) => g.resultado_id).filter(Boolean) as string[]);
-    const notaReclamo = porCartera
-      .filter((t) => t.tipo_formulario === "nota_reclamo")
-      .sort((a, b) => a.orden - b.orden);
-    const proxPendiente = notaReclamo.find((t) => !completedIds.has(t.id));
-    return [
-      ...porCartera.filter((t) => t.tipo_formulario !== "nota_reclamo"),
-      ...(proxPendiente ? [proxPendiente] : []),
-    ];
-  })();
+  // Filtrado secuencial de nota_reclamo + filtro por cartera (M6: lógica en utils-field.ts)
+  const tiposResultadoFiltrados = filtrarTiposResultado(
+    tiposResultado,
+    cliente?.tipo_cliente ?? "local",
+    new Set<string>(gestiones.map((g) => g.resultado_id).filter(Boolean) as string[])
+  );
 
   const esPropio = cliente?.ejecutivo_id === user?.id;
   // Ejecutivo que creó el cliente mientras está en CENSO (puede editar para cargar tarifa)
