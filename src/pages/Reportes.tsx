@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { TrendingUp, TrendingDown, Trophy, Users, Loader2, ChevronLeft, ChevronRight, Download, CalendarDays } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
-import { formatPYG } from "@/lib/mock-data";
+import { formatPYG } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useProfile } from "@/hooks/useProfile";

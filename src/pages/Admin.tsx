@@ -13,7 +13,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useProfile, Profile } from "@/hooks/useProfile";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { formatPYG, parseMontoPYG } from "@/lib/mock-data";
+import { formatPYG, parseMontoPYG } from "@/lib/format";
 import { addBusinessHours } from "@/lib/utils-field";
 
 interface EjecutivoConMeta extends Profile {

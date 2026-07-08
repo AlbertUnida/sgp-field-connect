@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Search, MapPin, Phone, ChevronRight, Loader2, User } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Input } from "@/components/ui/input";
-import { formatPYG, relativeDate } from "@/lib/mock-data";
+import { formatPYG, relativeDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";

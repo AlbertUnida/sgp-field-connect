@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { stageByKey, type StageKey } from "@/lib/mock-data";
+import { stageByKey, type StageKey } from "@/lib/format";
 
 interface StageBadgeProps {
   stage: StageKey;

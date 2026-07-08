@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Calendar, CheckCircle2, Clock, MapPin, Target, TrendingUp, Loader2, AlertTriangle, PhoneCall, CalendarClock, ChevronRight, Users, BarChart2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
-import { formatPYG, relativeDate } from "@/lib/mock-data";
+import { formatPYG, relativeDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useProfile } from "@/hooks/useProfile";

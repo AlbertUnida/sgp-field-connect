@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
-import { formatPYG, relativeDate } from "@/lib/mock-data";
+import { formatPYG, relativeDate } from "@/lib/format";
 import { RESULTADOS_GESTION } from "@/lib/resultados-gestion";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";

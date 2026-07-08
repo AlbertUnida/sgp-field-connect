@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Loader2, Receipt, User, Filter, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import { AppHeader } from "@/components/AppHeader";
-import { formatPYG } from "@/lib/mock-data";
+import { formatPYG } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";

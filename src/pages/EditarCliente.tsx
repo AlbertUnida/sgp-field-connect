@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { parseMontoPYG } from "@/lib/mock-data";
+import { parseMontoPYG } from "@/lib/format";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Save, Loader2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";

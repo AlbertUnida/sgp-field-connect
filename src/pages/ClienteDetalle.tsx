@@ -15,7 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
-import { formatPYG, parseMontoPYG } from "@/lib/mock-data";
+import { formatPYG, parseMontoPYG } from "@/lib/format";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { filtrarTiposResultado } from "@/lib/utils-field";
