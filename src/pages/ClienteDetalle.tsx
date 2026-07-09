@@ -19,6 +19,7 @@ import { formatPYG, parseMontoPYG } from "@/lib/format";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { filtrarTiposResultado } from "@/lib/utils-field";
+import { encolarGestion, esErrorDeRed } from "@/lib/offline-queue";
 
 interface Cliente {
   id: number;
@@ -448,7 +449,7 @@ const ClienteDetalle = () => {
       .eq("cliente_id", id)
       .order("created_at", { ascending: false });
 
-    setGestiones((data ?? []) as Gestion[]);
+    if (data) setGestiones(data as Gestion[]);
   };
 
   const asignarEjecutivo = async () => {
@@ -748,7 +749,7 @@ const ClienteDetalle = () => {
       ? (() => { const d = new Date(); d.setDate(d.getDate() + 30); return d.toISOString().split("T")[0]; })()
       : form.proxima_accion || null;
 
-    const { error } = await supabase.from("gestiones").insert({
+    const gestionPayload = {
       cliente_id: parseInt(id!),
       ejecutivo_id: user!.id,
       tipo: form.tipo,
@@ -757,21 +758,44 @@ const ClienteDetalle = () => {
       datos_extra: Object.keys(datosExtra).length > 0 ? datosExtra : null,
       nota: form.notas || null,
       fecha_inicio: new Date().toISOString(),
-    });
-
-    if (error) {
-      toast.error("Error al registrar: " + error.message);
-      setGuardando(false);
-      return;
-    }
-
-    // Actualizar ultima_gestion en el cliente
-    await supabase.from("clientes").update({
+    };
+    const clienteUpdateData = {
       ultima_gestion: new Date().toISOString(),
       proxima_accion: proximaFinal,
-    }).eq("id", id);
+    };
 
-    if (autoAgenda) {
+    let offline = !navigator.onLine;
+    if (!offline) {
+      const { error } = await supabase.from("gestiones").insert(gestionPayload);
+      if (error && esErrorDeRed(error)) {
+        offline = true;
+      } else if (error) {
+        toast.error("Error al registrar: " + error.message);
+        setGuardando(false);
+        return;
+      } else {
+        // Actualizar ultima_gestion en el cliente
+        await supabase.from("clientes").update(clienteUpdateData).eq("id", id);
+      }
+    }
+
+    if (offline) {
+      try {
+        await encolarGestion({
+          creada_en: new Date().toISOString(),
+          ejecutivo_id: user!.id,
+          gestion: gestionPayload,
+          cliente_update: { cliente_id: id!, data: clienteUpdateData },
+          foto: null,
+          foto_tipo: null,
+        });
+        toast.success("Sin señal 📡 — actividad guardada en el teléfono. Se enviará sola al recuperar conexión.");
+      } catch {
+        toast.error("No se pudo guardar la actividad localmente");
+        setGuardando(false);
+        return;
+      }
+    } else if (autoAgenda) {
       toast.success("Actividad registrada. Próxima visita agendada en 30 días ✅");
     } else {
       toast.success("Actividad registrada en la bitácora ✅");

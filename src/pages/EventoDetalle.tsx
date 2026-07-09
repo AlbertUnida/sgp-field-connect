@@ -19,6 +19,7 @@ import { RESULTADOS_GESTION } from "@/lib/resultados-gestion";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { capturarGPSPromise, aplicarMarcaDeAgua, filtrarTiposResultado } from "@/lib/utils-field";
+import { encolarGestion, esErrorDeRed } from "@/lib/offline-queue";
 
 interface Evento {
   id: string;
@@ -190,7 +191,7 @@ const EventoDetalle = () => {
       .select("id, tipo, resultado, resultado_id, nota, foto_url, fecha_inicio, created_at, datos_extra, ejecutivo:ejecutivo_id(nombre, apellido)")
       .eq("evento_id", eventoId)
       .order("created_at", { ascending: false });
-    setGestiones(data ?? []);
+    if (data) setGestiones(data);
     const ids = new Set<string>((data ?? []).map((g: any) => g.resultado_id).filter(Boolean));
     setResultadosCompletados(ids);
   };
@@ -264,6 +265,7 @@ const EventoDetalle = () => {
 
     // Subir foto si la hay
     let fotoUrl: string | null = null;
+    let fotoFalloRed = false;
     if (fotoFile) {
       setSubiendoFoto(true);
       const ext = fotoFile.name.split(".").pop() ?? "jpg";
@@ -273,6 +275,8 @@ const EventoDetalle = () => {
         .upload(path, fotoFile, { contentType: fotoFile.type, upsert: false });
       if (!uploadError) {
         fotoUrl = path; // A3: guardar path en lugar de URL pública (bucket privado)
+      } else if (esErrorDeRed(uploadError)) {
+        fotoFalloRed = true;
       } else {
         toast.error("No se pudo subir la foto — se guardará sin imagen");
       }
@@ -317,7 +321,7 @@ const EventoDetalle = () => {
         ? (RESULTADOS_GESTION.find((r) => r.key === resultadoReal)?.label ?? null)
         : null; // email: sin resultado inmediato
 
-    const { error } = await supabase.from("gestiones").insert({
+    const gestionPayload = {
       cliente_id: evento.cliente_id,
       evento_id: eventoId,
       tipo: formTipo,
@@ -330,12 +334,40 @@ const EventoDetalle = () => {
       fecha_inicio: new Date().toISOString(),
       lat_inicio: coordenadas?.lat ?? null,
       lng_inicio: coordenadas?.lng ?? null,
-      foto_url: fotoUrl,
-    });
+    };
 
-    if (error) { toast.error("Error al registrar: " + error.message); setGuardando(false); return; }
+    let offline = !navigator.onLine || fotoFalloRed;
+    if (!offline) {
+      const { error } = await supabase.from("gestiones").insert({ ...gestionPayload, foto_url: fotoUrl });
+      if (error && esErrorDeRed(error)) {
+        offline = true;
+      } else if (error) {
+        toast.error("Error al registrar: " + error.message);
+        setGuardando(false);
+        return;
+      }
+    }
 
-    toast.success("✅ Gestión registrada");
+    if (offline) {
+      try {
+        await encolarGestion({
+          creada_en: new Date().toISOString(),
+          ejecutivo_id: user!.id,
+          gestion: gestionPayload,
+          cliente_update: null,
+          foto: fotoFile,
+          foto_tipo: fotoFile?.type ?? null,
+        });
+        toast.success("Sin señal 📡 — gestión guardada en el teléfono. Se enviará sola al recuperar conexión.");
+      } catch {
+        toast.error("No se pudo guardar la gestión localmente");
+        setGuardando(false);
+        return;
+      }
+    } else {
+      toast.success("✅ Gestión registrada");
+    }
+
     resetForm();
     setShowForm(false);
     cargarGestiones();

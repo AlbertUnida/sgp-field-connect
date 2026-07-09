@@ -14,6 +14,10 @@ import { cn } from "@/lib/utils";
 import { capturarGPSPromise, aplicarMarcaDeAgua, filtrarTiposResultado } from "@/lib/utils-field";
 import { encolarGestion, esErrorDeRed } from "@/lib/offline-queue";
 
+// Cache local de datos de referencia para poder registrar sin señal
+const CACHE_CLIENTES = "sgp-cache-clientes-registrar";
+const CACHE_RESULTADOS = "sgp-cache-tipos-resultado";
+
 interface ClienteOpcion {
   id: string;
   numero_cliente: number | null;
@@ -159,7 +163,16 @@ const Registrar = () => {
     }
 
     const { data } = await query;
-    setClientes(data ?? []);
+    if (data) {
+      setClientes(data);
+      try { localStorage.setItem(CACHE_CLIENTES, JSON.stringify(data)); } catch { /* cache lleno: ignorar */ }
+    } else {
+      // Sin conexión: usar la última lista cacheada
+      try {
+        const cache = localStorage.getItem(CACHE_CLIENTES);
+        if (cache) setClientes(JSON.parse(cache));
+      } catch { /* cache corrupto: ignorar */ }
+    }
     setCargandoClientes(false);
   };
 
@@ -171,7 +184,15 @@ const Registrar = () => {
       .eq("activo", true)
       .order("orden")
       .order("nombre");
-    setTiposResultado(data ?? []);
+    if (data) {
+      setTiposResultado(data);
+      try { localStorage.setItem(CACHE_RESULTADOS, JSON.stringify(data)); } catch { /* cache lleno: ignorar */ }
+    } else {
+      try {
+        const cache = localStorage.getItem(CACHE_RESULTADOS);
+        if (cache) setTiposResultado(JSON.parse(cache));
+      } catch { /* cache corrupto: ignorar */ }
+    }
     setCargandoResultados(false);
   };
 
