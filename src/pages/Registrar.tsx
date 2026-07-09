@@ -12,6 +12,7 @@ import { useProfile } from "@/hooks/useProfile";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { capturarGPSPromise, aplicarMarcaDeAgua, filtrarTiposResultado } from "@/lib/utils-field";
+import { encolarGestion, esErrorDeRed } from "@/lib/offline-queue";
 
 interface ClienteOpcion {
   id: string;
@@ -320,23 +321,6 @@ const Registrar = () => {
       }
     }
 
-    // Subir foto si hay una
-    let fotoUrl: string | null = null;
-    if (fotoFile) {
-      setSubiendoFoto(true);
-      const ext = fotoFile.name.split(".").pop() ?? "jpg";
-      const path = `${user!.id}/${Date.now()}.${ext}`;
-      const { error: uploadError } = await supabase.storage
-        .from("gestiones-fotos")
-        .upload(path, fotoFile, { contentType: fotoFile.type, upsert: false });
-      if (!uploadError) {
-        fotoUrl = path; // A3: guardar path en lugar de URL pública (bucket privado)
-      } else {
-        toast.error("No se pudo subir la foto — se guardará sin imagen");
-      }
-      setSubiendoFoto(false);
-    }
-
     // Construir datos_extra según canal y tipo_formulario
     const datosExtra: Record<string, unknown> = {};
 
@@ -369,7 +353,18 @@ const Registrar = () => {
       datosExtra.contacto_fecha = contactoFecha || null;
     }
 
-    const { error } = await supabase.from("gestiones").insert({
+    // Auto-agenda 30 días (calculado antes del insert para poder encolar offline)
+    const autoAgenda = (tipo !== "email") && (resultadoRealObj?.autoAgenda ?? false);
+    const proximaFinal = autoAgenda
+      ? (() => {
+          const d = new Date();
+          d.setDate(d.getDate() + 30);
+          return d.toISOString().split("T")[0];
+        })()
+      : proxima || null;
+
+    // Payload de la gestión (foto_url se resuelve al subir, online u offline)
+    const gestionPayload = {
       cliente_id: parseInt(clienteSeleccionado.id),
       evento_id: eventoSeleccionado || null,
       ejecutivo_id: user!.id,
@@ -381,34 +376,83 @@ const Registrar = () => {
       fecha_inicio: new Date().toISOString(),
       lat_inicio: coordenadas?.lat ?? null,
       lng_inicio: coordenadas?.lng ?? null,
-      foto_url: fotoUrl,
-    });
-
-    if (error) {
-      toast.error("Error al guardar: " + error.message);
-      setGuardando(false);
-      return;
-    }
-
-    // Auto-agenda 30 días si el resultado lo requiere (solo si hay resultado)
-    const autoAgenda = (tipo !== "email") && (resultadoRealObj?.autoAgenda ?? false);
-    const proximaFinal = autoAgenda
-      ? (() => {
-          const d = new Date();
-          d.setDate(d.getDate() + 30);
-          return d.toISOString().split("T")[0];
-        })()
-      : proxima || null;
-
-    await supabase.from("clientes").update({
+    };
+    const clienteUpdateData = {
       ultima_gestion: new Date().toISOString(),
       proxima_accion: proximaFinal,
-    }).eq("id", clienteSeleccionado.id);
+    };
 
-    if (autoAgenda) {
-      toast.success("Gestión guardada. Próxima visita agendada en 30 días ✅");
+    const guardarOffline = async () => {
+      await encolarGestion({
+        creada_en: new Date().toISOString(),
+        ejecutivo_id: user!.id,
+        gestion: gestionPayload,
+        cliente_update: { cliente_id: clienteSeleccionado.id, data: clienteUpdateData },
+        foto: fotoFile,
+        foto_tipo: fotoFile?.type ?? null,
+      });
+      toast.success("Sin señal 📡 — gestión guardada en el teléfono. Se enviará sola al recuperar conexión.");
+    };
+
+    if (!navigator.onLine) {
+      // Sin conexión: directo a la cola offline
+      try {
+        await guardarOffline();
+      } catch {
+        toast.error("No se pudo guardar la gestión localmente");
+        setGuardando(false);
+        return;
+      }
     } else {
-      toast.success("Gestión registrada en la bitácora ✅");
+      // Subir foto si hay una
+      let fotoUrl: string | null = null;
+      let falloRed = false;
+      if (fotoFile) {
+        setSubiendoFoto(true);
+        const ext = fotoFile.name.split(".").pop() ?? "jpg";
+        const path = `${user!.id}/${Date.now()}.${ext}`;
+        const { error: uploadError } = await supabase.storage
+          .from("gestiones-fotos")
+          .upload(path, fotoFile, { contentType: fotoFile.type, upsert: false });
+        if (!uploadError) {
+          fotoUrl = path; // A3: guardar path en lugar de URL pública (bucket privado)
+        } else if (esErrorDeRed(uploadError)) {
+          falloRed = true;
+        } else {
+          toast.error("No se pudo subir la foto — se guardará sin imagen");
+        }
+        setSubiendoFoto(false);
+      }
+
+      if (!falloRed) {
+        const { error } = await supabase.from("gestiones").insert({ ...gestionPayload, foto_url: fotoUrl });
+        if (error && esErrorDeRed(error)) {
+          falloRed = true;
+        } else if (error) {
+          toast.error("Error al guardar: " + error.message);
+          setGuardando(false);
+          return;
+        }
+      }
+
+      if (falloRed) {
+        // Se cortó la señal a mitad de camino: a la cola offline
+        try {
+          await guardarOffline();
+        } catch {
+          toast.error("Sin conexión y no se pudo guardar localmente");
+          setGuardando(false);
+          return;
+        }
+      } else {
+        await supabase.from("clientes").update(clienteUpdateData).eq("id", clienteSeleccionado.id);
+
+        if (autoAgenda) {
+          toast.success("Gestión guardada. Próxima visita agendada en 30 días ✅");
+        } else {
+          toast.success("Gestión registrada en la bitácora ✅");
+        }
+      }
     }
 
     // Limpiar formulario completo

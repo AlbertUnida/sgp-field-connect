@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { BottomNav } from "@/components/BottomNav";
 import { useTracking } from "@/hooks/useTracking";
+import { useOfflineSync } from "@/hooks/useOfflineSync";
 import { cn } from "@/lib/utils";
 
 /**
@@ -16,6 +17,9 @@ const AppLayout = () => {
 
   // Reporta la ubicación del usuario logueado para Monitoreo en vivo
   useTracking();
+
+  // Sincroniza gestiones guardadas offline al recuperar conexión
+  useOfflineSync();
 
   return (
     <div className="min-h-screen bg-background">
