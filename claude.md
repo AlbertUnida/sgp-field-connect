@@ -23,7 +23,7 @@ Guía para Claude al trabajar en este repositorio.
 | Componentes | shadcn/ui |
 | Backend | Supabase (PostgreSQL + Auth + Storage + RLS) |
 | Deploy | Vercel |
-| Package manager | Bun (lockfile: `bun.lock`) |
+| Package manager | npm (lockfile oficial: `package-lock.json`; decidido 2026-07-10, bun no está instalado en la máquina de trabajo) |
 
 ---
 
@@ -31,13 +31,13 @@ Guía para Claude al trabajar en este repositorio.
 
 ```bash
 # Instalar dependencias
-bun install
+npm install
 
 # Desarrollo local
-bun run dev
+npm run dev
 
 # Build de producción
-bun run build
+npm run build
 ```
 
 No hay test suite activa. Validación manual en `http://localhost:5173`.
@@ -236,6 +236,22 @@ GIT_DIR=/tmp/tmp_check git log --oneline -5
 5. **Modo offline completo**: `offline-queue.ts` (IndexedDB) + `useOfflineSync` + SW v3 con fallback SPA + cache localStorage de clientes/tareas en Registrar. Integrado en Registrar, ClienteDetalle y EventoDetalle.
 
 ### Pendiente inmediato (mañana)
+- [ ] **Web push: CÓDIGO COMPLETO (2026-07-10)**, falta setup del usuario: SQL tabla `push_suscripciones` + claves VAPID + secrets + deploy de `enviar-alertas` + cron (pasos exactos abajo en "Setup web push"). Código: `src/lib/push.ts`, handlers en `public/sw.js`, sección Notificaciones en Perfil.tsx, Edge Function.
+- [x] Lockfile npm: decidido y `bun.lock` eliminado.
+
+### Setup web push (pasos del usuario, una sola vez)
+1. `npx web-push generate-vapid-keys` → copiar las dos claves.
+2. `.env.local` y Vercel (Settings → Environment Variables): `VITE_VAPID_PUBLIC_KEY=<publica>` → redeploy.
+3. Secrets de la función: `npx supabase secrets set VAPID_PUBLIC_KEY=<publica> VAPID_PRIVATE_KEY=<privada> CRON_SECRET=<inventar-uno-largo>`
+4. Deploy: `npx supabase functions deploy enviar-alertas`
+5. Cron diario 8am (SQL Editor, requiere extensiones pg_cron y pg_net habilitadas en Dashboard → Database → Extensions):
+```sql
+select cron.schedule('alertas-diarias', '0 11 * * *',  -- 11 UTC = 8am Paraguay
+  $$ select net.http_post(
+       url := 'https://sdvhtupgzpchhejxrowg.supabase.co/functions/v1/enviar-alertas',
+       headers := jsonb_build_object('Authorization', 'Bearer <CRON_SECRET>')
+     ) $$);
+```
 - [ ] Verificar que el usuario commiteó y pusheó el último lote offline (sw.js v3, offline-queue, useOfflineSync, Registrar, ClienteDetalle, EventoDetalle, AppHeader, AppLayout, CLAUDE.md).
 - [ ] Probar offline en el teléfono contra Vercel: abrir con conexión (instala SW v3) → modo avión → registrar desde bitácora → reconectar → verificar sync.
 

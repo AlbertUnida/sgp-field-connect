@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/lib/supabaseClient";
+import { activarPush, desactivarPush, estadoPush, type EstadoPush } from "@/lib/push";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { toast } from "sonner";
@@ -36,6 +37,30 @@ const Perfil = () => {
 
   // ── Confirmación logout ──
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [pushEstado, setPushEstado] = useState<EstadoPush>("no-soportado");
+  const [pushCargando, setPushCargando] = useState(false);
+
+  useEffect(() => {
+    estadoPush().then(setPushEstado).catch(() => {});
+  }, []);
+
+  const togglePush = async () => {
+    if (!user) return;
+    setPushCargando(true);
+    try {
+      if (pushEstado === "activas") {
+        await desactivarPush();
+        toast.success("Notificaciones desactivadas en este dispositivo");
+      } else {
+        const ok = await activarPush(user.id);
+        if (ok) toast.success("¡Notificaciones activadas! 🔔");
+        else toast.error("No se pudieron activar (permiso denegado o falta configuración)");
+      }
+      setPushEstado(await estadoPush());
+    } finally {
+      setPushCargando(false);
+    }
+  };
 
   useEffect(() => {
     if (profile) {
@@ -153,6 +178,34 @@ const Perfil = () => {
                   </button>
                 </div>
               </div>
+            )}
+          </div>
+        </section>
+
+        {/* ── Notificaciones push ── */}
+        <section className="rounded-2xl border border-border bg-card p-4 shadow-card">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-bold">Notificaciones</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {pushEstado === "activas" && "Recibís avisos de alertas vencidas en este dispositivo"}
+                {pushEstado === "inactivas" && "Activá para recibir avisos de alertas vencidas"}
+                {pushEstado === "denegadas" && "Bloqueadas en el navegador — habilitalas en la configuración del sitio"}
+                {pushEstado === "no-soportado" && "No disponibles en este dispositivo o falta configuración"}
+              </p>
+            </div>
+            {(pushEstado === "activas" || pushEstado === "inactivas") && (
+              <Button
+                size="sm"
+                variant={pushEstado === "activas" ? "outline" : "default"}
+                disabled={pushCargando}
+                onClick={togglePush}
+                className="shrink-0"
+              >
+                {pushCargando
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : pushEstado === "activas" ? "Desactivar" : "Activar"}
+              </Button>
             )}
           </div>
         </section>
