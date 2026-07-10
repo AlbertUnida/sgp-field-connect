@@ -160,36 +160,51 @@ const Monitoreo = () => {
     if (visitasHoy.length === 0) { setSospechosas(new Set()); return; }
 
     const clienteIds = [...new Set(visitasHoy.map((g) => g.cliente_id))];
-    supabase
-      .from("gestiones")
-      .select("id, cliente_id, lat_inicio, lng_inicio")
-      .eq("tipo", "visita")
-      .not("lat_inicio", "is", null)
-      .in("cliente_id", clienteIds)
-      .then(({ data }) => {
-        if (!data) return;
-        const historicas = new Map<number, { id: number; lat: number; lng: number }[]>();
-        for (const h of data as { id: number; cliente_id: number; lat_inicio: number; lng_inicio: number }[]) {
-          const arr = historicas.get(h.cliente_id) ?? [];
-          arr.push({ id: h.id, lat: h.lat_inicio, lng: h.lng_inicio });
-          historicas.set(h.cliente_id, arr);
-        }
+    Promise.all([
+      supabase
+        .from("gestiones")
+        .select("id, cliente_id, lat_inicio, lng_inicio")
+        .eq("tipo", "visita")
+        .not("lat_inicio", "is", null)
+        .in("cliente_id", clienteIds),
+      supabase
+        .from("clientes")
+        .select("id, lat, lng")
+        .in("id", clienteIds),
+    ]).then(([{ data: historico }, { data: clientesData }]) => {
+      if (!historico) return;
 
-        const marcadas = new Set<number>();
-        for (const g of visitasHoy) {
-          // Referencia: centroide de las demás visitas con GPS del mismo cliente
+      // Coordenadas cargadas en el cliente (migración/carga manual): tienen prioridad
+      const fija = new Map<number, { lat: number; lng: number }>();
+      for (const c of (clientesData ?? []) as { id: number; lat: number | null; lng: number | null }[]) {
+        if (c.lat != null && c.lng != null) fija.set(c.id, { lat: Number(c.lat), lng: Number(c.lng) });
+      }
+
+      const historicas = new Map<number, { id: number; lat: number; lng: number }[]>();
+      for (const h of historico as { id: number; cliente_id: number; lat_inicio: number; lng_inicio: number }[]) {
+        const arr = historicas.get(h.cliente_id) ?? [];
+        arr.push({ id: h.id, lat: h.lat_inicio, lng: h.lng_inicio });
+        historicas.set(h.cliente_id, arr);
+      }
+
+      const marcadas = new Set<number>();
+      for (const g of visitasHoy) {
+        let ref = fija.get(g.cliente_id) ?? null;
+        if (!ref) {
+          // Sin coordenadas cargadas: centroide de las demás visitas con GPS
           const otras = (historicas.get(g.cliente_id) ?? []).filter((h) => h.id !== g.id);
           if (otras.length < MIN_VISITAS_REFERENCIA) continue;
-          const ref = {
+          ref = {
             lat: otras.reduce((s, p) => s + p.lat, 0) / otras.length,
             lng: otras.reduce((s, p) => s + p.lng, 0) / otras.length,
           };
-          if (distanciaMetros(ref, { lat: g.lat_inicio!, lng: g.lng_inicio! }) > UMBRAL_SOSPECHOSA_M) {
-            marcadas.add(g.id);
-          }
         }
-        setSospechosas(marcadas);
-      });
+        if (distanciaMetros(ref, { lat: g.lat_inicio!, lng: g.lng_inicio! }) > UMBRAL_SOSPECHOSA_M) {
+          marcadas.add(g.id);
+        }
+      }
+      setSospechosas(marcadas);
+    });
   }, [gestiones]);
 
   // ── Realtime: nuevas gestiones (solo viendo HOY) ──

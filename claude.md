@@ -106,6 +106,15 @@ ubicaciones_ejecutivos (tracking en vivo)
   └── Realtime habilitado (igual que gestiones) vía supabase_realtime
 ```
 
+### Georreferenciación de clientes (regla de prioridad)
+
+`clientes.lat/lng` son **opcionales** (numeric, nullable). Prioridad en RutaDia y anti-fraude de Monitoreo:
+1. Si el cliente tiene `lat/lng` cargados → se usan esos (fuente: migración o carga manual).
+2. Si no → centroide de sus visitas con GPS (`gestiones.lat_inicio/lng_inicio`). El sistema "aprende" la ubicación solo con las visitas.
+3. Sin ninguna de las dos → cliente funciona igual; en Ruta del día aparece al final como "Sin ubicación".
+
+**Migración futura de cartera existente**: importar clientes con `lat/lng` si se conocen, NULL si no — no romper nada. No pisar `lat/lng` existentes desde el código.
+
 ### Roles
 
 - `ejecutivo` — ve solo su cartera asignada

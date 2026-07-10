@@ -58,7 +58,7 @@ const RutaDia = () => {
       const [{ data: clientes }, { data: visitas }] = await Promise.all([
         supabase
           .from("clientes")
-          .select("id, nombre_comercial, ciudad, telefono, proxima_accion, rubro_rel:rubro_id(dias_visita)")
+          .select("id, nombre_comercial, ciudad, telefono, proxima_accion, lat, lng, rubro_rel:rubro_id(dias_visita)")
           .eq("activo", true)
           .eq("ejecutivo_id", user.id)
           .not("instancia", "eq", "CENSO"),
@@ -90,7 +90,8 @@ const RutaDia = () => {
       const resultado: Parada[] = [];
       for (const c of (clientes ?? []) as unknown as {
         id: number; nombre_comercial: string; ciudad: string | null; telefono: string | null;
-        proxima_accion: string | null; rubro_rel: { dias_visita: number | null } | null;
+        proxima_accion: string | null; lat: number | null; lng: number | null;
+        rubro_rel: { dias_visita: number | null } | null;
       }[]) {
         const cid = String(c.id);
         const limite = c.rubro_rel?.dias_visita ?? 7;
@@ -100,13 +101,17 @@ const RutaDia = () => {
         const proximaHoy = !!c.proxima_accion && c.proxima_accion <= hoyStr;
         if (!vencida && !proximaHoy) continue;
 
+        // Prioridad: coordenadas cargadas en el cliente (migración/carga manual);
+        // si no tiene, centroide de sus visitas con GPS
         const pts = coords.get(cid) ?? [];
-        const centro = pts.length > 0
-          ? {
-              lat: pts.reduce((s, p) => s + p.lat, 0) / pts.length,
-              lng: pts.reduce((s, p) => s + p.lng, 0) / pts.length,
-            }
-          : null;
+        const centro = c.lat != null && c.lng != null
+          ? { lat: Number(c.lat), lng: Number(c.lng) }
+          : pts.length > 0
+            ? {
+                lat: pts.reduce((s, p) => s + p.lat, 0) / pts.length,
+                lng: pts.reduce((s, p) => s + p.lng, 0) / pts.length,
+              }
+            : null;
 
         resultado.push({
           id: cid,
@@ -238,7 +243,7 @@ const RutaDia = () => {
 
         {!loading && ordenadas.length > 0 && (
           <p className="px-1 text-center text-[11px] text-muted-foreground">
-            La ubicación de cada cliente se estima con el GPS de sus visitas anteriores.
+            La ubicación de cada cliente sale de sus coordenadas cargadas o, si no las tiene, del GPS de sus visitas anteriores.
             Los clientes sin visitas con GPS aparecen al final.
           </p>
         )}
