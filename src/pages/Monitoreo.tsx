@@ -10,6 +10,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/lib/supabaseClient";
 import { useProfile } from "@/hooks/useProfile";
 import { cn } from "@/lib/utils";
+import { distanciaMetros } from "@/lib/utils-field";
 import { toast } from "sonner";
 
 // ─────────────────────────────────────────────────────────────
@@ -53,6 +54,11 @@ const ASUNCION: [number, number] = [-25.2637, -57.5759];
 // Un ejecutivo se considera "en línea" si reportó ubicación hace < 15 min
 const VIGENCIA_UBICACION_MS = 15 * 60 * 1000;
 
+// Anti-fraude: visita a más de esta distancia del centroide histórico del cliente
+const UMBRAL_SOSPECHOSA_M = 500;
+// Mínimo de visitas previas con GPS para tener referencia confiable
+const MIN_VISITAS_REFERENCIA = 2;
+
 // Paleta de colores por ejecutivo (se asigna por orden estable de id)
 const COLORES = [
   "#2563eb", "#dc2626", "#059669", "#d97706", "#7c3aed",
@@ -89,6 +95,7 @@ const Monitoreo = () => {
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set()); // vacío = todos
   const [gestiones, setGestiones] = useState<GestionLive[]>([]);
   const [ubicaciones, setUbicaciones] = useState<Record<string, UbicacionLive>>({});
+  const [sospechosas, setSospechosas] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
   const [enVivo, setEnVivo] = useState(false);
   const [tick, setTick] = useState(0); // re-evalúa vigencia de ubicaciones cada minuto
@@ -144,6 +151,46 @@ const Monitoreo = () => {
     };
     cargar();
   }, [fecha]);
+
+  // ── Anti-fraude GPS: visitas lejos de la ubicación habitual del cliente ──
+  useEffect(() => {
+    const visitasHoy = gestiones.filter(
+      (g) => g.tipo === "visita" && g.lat_inicio != null && g.lng_inicio != null
+    );
+    if (visitasHoy.length === 0) { setSospechosas(new Set()); return; }
+
+    const clienteIds = [...new Set(visitasHoy.map((g) => g.cliente_id))];
+    supabase
+      .from("gestiones")
+      .select("id, cliente_id, lat_inicio, lng_inicio")
+      .eq("tipo", "visita")
+      .not("lat_inicio", "is", null)
+      .in("cliente_id", clienteIds)
+      .then(({ data }) => {
+        if (!data) return;
+        const historicas = new Map<number, { id: number; lat: number; lng: number }[]>();
+        for (const h of data as { id: number; cliente_id: number; lat_inicio: number; lng_inicio: number }[]) {
+          const arr = historicas.get(h.cliente_id) ?? [];
+          arr.push({ id: h.id, lat: h.lat_inicio, lng: h.lng_inicio });
+          historicas.set(h.cliente_id, arr);
+        }
+
+        const marcadas = new Set<number>();
+        for (const g of visitasHoy) {
+          // Referencia: centroide de las demás visitas con GPS del mismo cliente
+          const otras = (historicas.get(g.cliente_id) ?? []).filter((h) => h.id !== g.id);
+          if (otras.length < MIN_VISITAS_REFERENCIA) continue;
+          const ref = {
+            lat: otras.reduce((s, p) => s + p.lat, 0) / otras.length,
+            lng: otras.reduce((s, p) => s + p.lng, 0) / otras.length,
+          };
+          if (distanciaMetros(ref, { lat: g.lat_inicio!, lng: g.lng_inicio! }) > UMBRAL_SOSPECHOSA_M) {
+            marcadas.add(g.id);
+          }
+        }
+        setSospechosas(marcadas);
+      });
+  }, [gestiones]);
 
   // ── Realtime: nuevas gestiones (solo viendo HOY) ──
   useEffect(() => {
@@ -270,12 +317,13 @@ const Monitoreo = () => {
     const bounds: [number, number][] = [];
     for (const g of visitasConGps) {
       const color = colorDe(g.ejecutivo_id);
+      const sospechosa = sospechosas.has(g.id);
       const hora = new Date(g.created_at).toLocaleTimeString("es-PY", {
         hour: "2-digit", minute: "2-digit",
       });
       const icono = L.divIcon({
         className: "",
-        html: `<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color};border:2px solid white;box-shadow:0 2px 6px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;"><div style="width:8px;height:8px;border-radius:50%;background:white;transform:rotate(45deg);"></div></div>`,
+        html: `<div style="width:26px;height:26px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:${color};border:3px solid ${sospechosa ? "#ef4444" : "white"};box-shadow:0 2px 6px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;"><div style="width:8px;height:8px;border-radius:50%;background:white;transform:rotate(45deg);"></div></div>`,
         iconSize: [26, 26],
         iconAnchor: [13, 26],
       });
@@ -283,7 +331,8 @@ const Monitoreo = () => {
         .bindPopup(
           `<strong>${g.cliente?.nombre_comercial ?? "Cliente"}</strong><br/>` +
           `${nombreEjecutivo(g.ejecutivo)} · ${hora}<br/>` +
-          `<span style="text-transform:capitalize">${g.tipo}</span>${g.resultado ? " — " + g.resultado : ""}`
+          `<span style="text-transform:capitalize">${g.tipo}</span>${g.resultado ? " — " + g.resultado : ""}` +
+          (sospechosa ? '<br/><span style="color:#dc2626;font-weight:600">⚠ Lejos de la ubicación habitual del cliente</span>' : "")
         )
         .addTo(capa);
       bounds.push([g.lat_inicio!, g.lng_inicio!]);
@@ -292,7 +341,7 @@ const Monitoreo = () => {
     if (bounds.length > 0) {
       map.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
     }
-  }, [visitasConGps, ubicacionesVigentes, colorDe]);
+  }, [visitasConGps, ubicacionesVigentes, colorDe, sospechosas]);
 
   // Posiciones en vivo (marcador pulsante por ejecutivo)
   useEffect(() => {
@@ -336,6 +385,7 @@ const Monitoreo = () => {
   // IDs de ejecutivos con actividad en el día (para ordenar chips)
   const activosHoy = new Set(gestiones.map((g) => g.ejecutivo_id));
   const enLinea = new Set(ubicacionesVigentes.map((u) => u.ejecutivo_id));
+  const sospechosasVisibles = filtradas.filter((g) => sospechosas.has(g.id)).length;
 
   return (
     <div className="min-h-screen">
@@ -373,6 +423,11 @@ const Monitoreo = () => {
             <span className="flex items-center gap-1.5">
               <MapPin className="h-4 w-4" /> {visitasConGps.length} con GPS
             </span>
+            {sospechosasVisibles > 0 && (
+              <span className="flex items-center gap-1 font-semibold text-red-600">
+                ⚠ {sospechosasVisibles} sospechosa{sospechosasVisibles > 1 ? "s" : ""}
+              </span>
+            )}
             <span className="flex items-center gap-1.5">
               <Users className="h-4 w-4" /> {activosHoy.size} activos
             </span>
@@ -469,6 +524,11 @@ const Monitoreo = () => {
                               <span className="capitalize">{g.tipo}</span>
                               {g.resultado ? ` · ${g.resultado}` : ""}
                             </p>
+                            {sospechosas.has(g.id) && (
+                              <p className="mt-0.5 text-[10px] font-semibold text-red-600">
+                                ⚠ Visita a más de 500 m de la ubicación habitual del cliente
+                              </p>
+                            )}
                             {g.nota && (
                               <p className="mt-0.5 truncate text-xs text-muted-foreground/80">
                                 {g.nota}
@@ -478,7 +538,7 @@ const Monitoreo = () => {
                           <div className="flex shrink-0 flex-col items-end gap-1">
                             <span className="text-xs font-medium text-muted-foreground">{hora}</span>
                             <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-                              {g.lat_inicio != null && <MapPin className="h-3 w-3 text-emerald-600" />}
+                              {g.lat_inicio != null && <MapPin className={cn("h-3 w-3", sospechosas.has(g.id) ? "text-red-500" : "text-emerald-600")} />}
                               <ChevronRight className="h-3 w-3" />
                             </span>
                           </div>
