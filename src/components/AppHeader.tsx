@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { useOfflineEstado } from "@/hooks/useOfflineSync";
+import { useAlertasBadge } from "@/hooks/useAlertasBadge";
 import { cn } from "@/lib/utils";
 
 interface AppHeaderProps {
@@ -16,6 +17,7 @@ export const AppHeader = ({ title, subtitle, wide }: AppHeaderProps) => {
   const { user } = useAuth();
   const { profile } = useProfile();
   const { online, pendientes } = useOfflineEstado();
+  const alertas = useAlertasBadge();
 
   const iniciales = [profile?.nombre, profile?.apellido]
     .filter(Boolean)
@@ -52,10 +54,18 @@ export const AppHeader = ({ title, subtitle, wide }: AppHeaderProps) => {
               </span>
             )}
           </span>
-          <span className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/10">
+          <Link
+            to="/app/alertas"
+            title={alertas > 0 ? `${alertas} alertas vencidas` : "Sin alertas vencidas"}
+            className="relative flex h-9 w-9 items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors"
+          >
             <Bell className="h-4 w-4" />
-            <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-accent ring-2 ring-primary" />
-          </span>
+            {alertas > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[9px] font-bold text-white">
+                {alertas > 99 ? "99+" : alertas}
+              </span>
+            )}
+          </Link>
           {/* Avatar → navega a perfil */}
           <Link
             to="/app/perfil"

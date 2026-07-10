@@ -242,7 +242,8 @@ GIT_DIR=/tmp/tmp_check git log --oneline -5
 ### Backlog acordado (en orden de impacto)
 1. ✅ **Anti-fraude GPS** (hecho 2026-07-10): en Monitoreo, visitas a >500m del centroide de visitas históricas del cliente (mín. 2 previas con GPS) se marcan con ⚠ en feed, pin con borde rojo y contador en KPIs. Constantes `UMBRAL_SOSPECHOSA_M` / `MIN_VISITAS_REFERENCIA` en Monitoreo.tsx; `distanciaMetros` en utils-field.ts.
 2. ✅ **Ruta del día** (hecho 2026-07-10): página `/app/ruta` (RutaDia.tsx, todos los roles, menú +). Clientes de la cartera propia con visita vencida (dias_visita del rubro, 90 días de historial) o proxima_accion <= hoy, ordenados por cercanía GPS a la posición actual (fallback: por urgencia). Ubicación del cliente = centroide de visitas con GPS. Botón "Ir" abre Google Maps direcciones.
-3. Push notifications (alertas vencidas). 4. Refactor de ClienteDetalle/Admin (muy grandes). 5. Decidir lockfile oficial (npm vs bun).
+3. Push notifications (alertas vencidas). Paso previo hecho 2026-07-10: campanita del AppHeader funcional — badge con total de alertas vencidas (`useAlertasBadge`, cache localStorage 10 min, misma lógica que Inicio/Alertas) y link a /app/alertas. Falta: web push real (VAPID + Edge Function + cron).
+4. Refactor de ClienteDetalle/Admin (muy grandes). 5. Decidir lockfile oficial (npm vs bun).
 
 ---
 
