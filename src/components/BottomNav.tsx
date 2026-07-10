@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Home, Users, Plus, BarChart3, Settings, UserPlus, ClipboardList, X, Receipt, TrendingUp, Radio } from "lucide-react";
+import { Home, Users, Plus, BarChart3, Settings, UserPlus, ClipboardList, X, Receipt, TrendingUp, Radio, Route as RouteIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProfile } from "@/hooks/useProfile";
 
@@ -43,6 +43,12 @@ export const BottomNav = () => {
               label="Registrar gestión"
               color="bg-accent"
               onClick={() => { setMenuAbierto(false); navigate("/app/registrar"); }}
+            />
+            <MenuOption
+              icon={<RouteIcon className="h-5 w-5" />}
+              label="Ruta del día"
+              color="bg-sky-600"
+              onClick={() => { setMenuAbierto(false); navigate("/app/ruta"); }}
             />
             {canManage && (
               <>

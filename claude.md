@@ -70,6 +70,7 @@ Admin
 - **`Scoring.tsx`** — Lead scoring de la cartera.
 - **`Monitoreo.tsx`** — Solo admin/supervisor. Feed de gestiones en tiempo real (Supabase Realtime) + mapa Leaflet con pins de visitas y posición en vivo de ejecutivos (`ubicaciones_ejecutivos`, vigencia 15 min). Filtro multi-select por ejecutivo, selector de fecha. Ancho completo en desktop (ver `RUTAS_ANCHAS` en AppLayout).
 - **`Inicio.tsx`** — Dashboard: KPIs del mes, alertas rápidas.
+- **`RutaDia.tsx`** — Ruta del día (`/app/ruta`, todos los roles): visitas pendientes de la cartera propia ordenadas por cercanía GPS, con link a Google Maps.
 
 ### Modelo de datos clave
 
@@ -231,7 +232,7 @@ GIT_DIR=/tmp/tmp_check git log --oneline -5
 
 ### Backlog acordado (en orden de impacto)
 1. ✅ **Anti-fraude GPS** (hecho 2026-07-10): en Monitoreo, visitas a >500m del centroide de visitas históricas del cliente (mín. 2 previas con GPS) se marcan con ⚠ en feed, pin con borde rojo y contador en KPIs. Constantes `UMBRAL_SOSPECHOSA_M` / `MIN_VISITAS_REFERENCIA` en Monitoreo.tsx; `distanciaMetros` en utils-field.ts.
-2. **Ruta del día**: ordenar visitas pendientes por cercanía a la posición actual del ejecutivo.
+2. ✅ **Ruta del día** (hecho 2026-07-10): página `/app/ruta` (RutaDia.tsx, todos los roles, menú +). Clientes de la cartera propia con visita vencida (dias_visita del rubro, 90 días de historial) o proxima_accion <= hoy, ordenados por cercanía GPS a la posición actual (fallback: por urgencia). Ubicación del cliente = centroide de visitas con GPS. Botón "Ir" abre Google Maps direcciones.
 3. Push notifications (alertas vencidas). 4. Refactor de ClienteDetalle/Admin (muy grandes). 5. Decidir lockfile oficial (npm vs bun).
 
 ---
