@@ -230,7 +230,7 @@ GIT_DIR=/tmp/tmp_check git log --oneline -5
 - [ ] Probar offline en el teléfono contra Vercel: abrir con conexión (instala SW v3) → modo avión → registrar desde bitácora → reconectar → verificar sync.
 
 ### Backlog acordado (en orden de impacto)
-1. **Anti-fraude GPS**: flag de visitas registradas a >500m del cliente (requiere geocodificar dirección del cliente o usar primera visita como referencia).
+1. ✅ **Anti-fraude GPS** (hecho 2026-07-10): en Monitoreo, visitas a >500m del centroide de visitas históricas del cliente (mín. 2 previas con GPS) se marcan con ⚠ en feed, pin con borde rojo y contador en KPIs. Constantes `UMBRAL_SOSPECHOSA_M` / `MIN_VISITAS_REFERENCIA` en Monitoreo.tsx; `distanciaMetros` en utils-field.ts.
 2. **Ruta del día**: ordenar visitas pendientes por cercanía a la posición actual del ejecutivo.
 3. Push notifications (alertas vencidas). 4. Refactor de ClienteDetalle/Admin (muy grandes). 5. Decidir lockfile oficial (npm vs bun).
 
