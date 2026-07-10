@@ -48,3 +48,30 @@ self.addEventListener("fetch", (e) => {
       .catch(() => caches.match(e.request))
   );
 });
+
+// ── Web Push: mostrar notificación y abrir la app al tocarla ──
+self.addEventListener("push", (e) => {
+  let datos = {};
+  try { datos = e.data ? e.data.json() : {}; } catch { /* sin payload */ }
+  e.waitUntil(
+    self.registration.showNotification(datos.title || "SGP Campo", {
+      body: datos.body || "",
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      data: { url: datos.url || "/app" },
+    })
+  );
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "/app";
+  e.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then((lista) => {
+      for (const c of lista) {
+        if ("focus" in c) { c.navigate(url); return c.focus(); }
+      }
+      return clients.openWindow(url);
+    })
+  );
+});
