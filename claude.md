@@ -236,7 +236,7 @@ GIT_DIR=/tmp/tmp_check git log --oneline -5
 5. **Modo offline completo**: `offline-queue.ts` (IndexedDB) + `useOfflineSync` + SW v3 con fallback SPA + cache localStorage de clientes/tareas en Registrar. Integrado en Registrar, ClienteDetalle y EventoDetalle.
 
 ### Pendiente inmediato (mañana)
-- [ ] **Web push: CÓDIGO COMPLETO (2026-07-10)**, falta setup del usuario: SQL tabla `push_suscripciones` + claves VAPID + secrets + deploy de `enviar-alertas` + cron (pasos exactos abajo en "Setup web push"). Código: `src/lib/push.ts`, handlers en `public/sw.js`, sección Notificaciones en Perfil.tsx, Edge Function.
+- [x] **Web push: SETUP COMPLETO (2026-07-10).** Código + infraestructura listos: tabla `push_suscripciones` + RLS (migración `supabase/migrations/20260710120000_push_suscripciones.sql`, ya ejecutada en Supabase); `pg_cron`/`pg_net` habilitadas; secrets VAPID + CRON_SECRET seteados; función `enviar-alertas` deployada; cron `alertas-diarias` activo (jobid 1, 0 11 * * *); `VITE_VAPID_PUBLIC_KEY` en `.env.local` y Vercel Production (redeploy hecho). Falta solo la prueba de campo (activar en el celular + disparo manual de la función). **Pendiente commitear:** `git add supabase/migrations/20260710120000_push_suscripciones.sql AUDITORIA-2026-07-03.md` (NO commitear los cambios de line-endings en `supabase/schema.sql` ni en la migración 20260709...; descartarlos con `git checkout --`).
 - [x] Lockfile npm: decidido y `bun.lock` eliminado.
 
 ### Setup web push (pasos del usuario, una sola vez)
