@@ -1,7 +1,7 @@
 # CLAUDE.md — SGP Field Connect
 
 Guía para Claude al trabajar en este repositorio.
-Última actualización: 2026-07-03
+Última actualización: 2026-07-09
 
 ---
 
@@ -68,6 +68,7 @@ Admin
 - **`Cobros.tsx`** — Lista de cobros con filtros y export Excel.
 - **`Alertas.tsx`** — Visitas y contactos vencidos por ejecutivo.
 - **`Scoring.tsx`** — Lead scoring de la cartera.
+- **`Monitoreo.tsx`** — Solo admin/supervisor. Feed de gestiones en tiempo real (Supabase Realtime) + mapa Leaflet con pins de visitas y posición en vivo de ejecutivos (`ubicaciones_ejecutivos`, vigencia 15 min). Filtro multi-select por ejecutivo, selector de fecha. Ancho completo en desktop (ver `RUTAS_ANCHAS` en AppLayout).
 - **`Inicio.tsx`** — Dashboard: KPIs del mes, alertas rápidas.
 
 ### Modelo de datos clave
@@ -95,6 +96,13 @@ tipos_resultado
 
 cobros
   └── eventos_ids UUID[] (cobro de eventos por lote)
+
+ubicaciones_ejecutivos (tracking en vivo)
+  └── ejecutivo_id UUID PK → profiles (1 fila por usuario, upsert)
+  └── lat, lng, accuracy, updated_at
+  └── Escrita por hook useTracking (AppLayout): watchPosition con throttle 90s/150m
+  └── RLS: cada uno escribe la suya; solo admin/supervisor leen todas
+  └── Realtime habilitado (igual que gestiones) vía supabase_realtime
 ```
 
 ### Roles
@@ -120,6 +128,7 @@ Hook `useProfile` expone: `isAdmin`, `isSupervisor`, `canManage` (admin OR super
 | `src/lib/resultados-gestion.ts` | `RESULTADOS_GESTION` — 9 opciones con score y autoAgenda |
 | `src/lib/mock-data.ts` | Solo `formatPYG`, `relativeDate`, `formatDate` (ignorar el resto) |
 | `src/lib/supabaseClient.ts` | Cliente Supabase singleton |
+| `src/lib/offline-queue.ts` | Cola offline de gestiones en IndexedDB (`sgp-offline`). `encolarGestion`, `sincronizarPendientes`, `esErrorDeRed`. Sync automático vía `useOfflineSync` (AppLayout: al abrir, al evento `online` y cada 60s). Indicador Wifi/pendientes en AppHeader (`useOfflineEstado`). Integrado en Registrar, ClienteDetalle (bitácora) y EventoDetalle. Registrar cachea clientes y tipos_resultado en localStorage para funcionar sin señal desde cero. `public/sw.js` (v3) tiene fallback SPA: cualquier navegación offline sirve el shell cacheado |
 | `src/lib/utils.ts` | `cn()` helper de clases |
 
 ---
@@ -154,27 +163,27 @@ GIT_DIR=/tmp/tmp_check git log --oneline -5
 - **C1** ✅ CERRADO — `ResetPassword.tsx` creado y ruta registrada fuera de `PublicRoute`.
 - **C2** ✅ CERRADO — Signups públicos deshabilitados en Auth. Edge Function `crear-usuario` con service_role es el único canal de creación de usuarios.
 - **C3** ✅ CERRADO — RPC `admin_set_user_profile` ya valida `calling_role IN ('admin','supervisor')` antes de ejecutar. Riesgo residual menor: supervisores pueden asignar rol 'admin' (aceptado como comportamiento intencional).
-- **C4** — Sin migrations en repo → esquema y RLS solo en dashboard Supabase. Fix: `npx supabase db pull` y commitear.
+- **C4** ✅ CERRADO — Esquema y RLS versionados en `supabase/migrations/20260709204905_remote_schema.sql` (db pull 2026-07-09; requiere Docker Desktop). Ante cambios de esquema futuros: repetir `npx supabase db pull` y commitear.
 
 ### ALTOS (pendientes)
 - **A1** ✅ CERRADO — RPCs `registrar_cobro_local` y `registrar_cobro_eventos` en PostgreSQL; todo corre en una sola transacción.
-- **A2** ✅ PENDIENTE — `cargarGestiones` en `EventoDetalle.tsx:197` no incluye `resultado_id` → filtro secuencial de nota_reclamo siempre en cero.
+- **A2** ✅ CERRADO — `cargarGestiones` en `EventoDetalle.tsx` ya incluye `resultado_id` en el select (verificado 2026-07-09).
 - **A3** ✅ CERRADO — Bucket `gestiones-fotos` privado + RLS solo authenticated + código usa signed URLs.
-- **A4** — `.in("cliente_id", ids)` con toda la cartera → falla a escala (>200 clientes).
+- **A4** ✅ CERRADO — Queries de cartera usan JOIN (`clientes!inner(...)`) en Alertas, Inicio y Admin. Los `.in()` restantes son sobre listas fijas (roles, estados), sin problema de escala (verificado 2026-07-09).
 
 ### MEDIOS (pendientes)
 - **M1** ✅ CERRADO — Visita CON EVENTO guarda `score` en datos_extra; vista `cliente_lead_scores` lo acumula.
-- **M2** — KPI "cobrado del mes" en Inicio.tsx sin límite superior de fecha.
+- **M2** ✅ CERRADO — KPI "cobrado del mes" en Inicio.tsx ya usa `lt(primerDiaSiguiente)` como límite superior (verificado 2026-07-09).
 - **M3** ✅ CERRADO — `parseMontoPYG` en `format.ts` reemplaza todos los parseos de monto; `replace(/\D/g, "")` restante es solo para búsqueda de clientes por ID.
 - **M4** ✅ CERRADO — `fecha_vencimiento + "T00:00:00"` fuerza parsing local en Inicio, ClienteDetalle y Admin.
 - **M5** ✅ CERRADO — `.not("instancia", "eq", "CENSO")` en la query de Registrar.tsx excluye clientes en CENSO.
-- **M6** — `aplicarMarcaDeAgua`, `capturarGPSPromise`, `tiposResultadoFiltrados`, `addBusinessHours` duplicados/triplicados.
-- **M8** — `proxima_accion` guardada en dos lugares distintos; campo en bitácora de ClienteDetalle nunca viene del select (código muerto).
+- **M6** ✅ CERRADO — Helpers centralizados en `src/lib/utils-field.ts`; las páginas los importan (verificado 2026-07-09).
+- **M8** ✅ CERRADO (por convención) — Locales: `proxima_accion` se guarda en `clientes` (alimenta alertas). Eventos: en `gestiones` (EventoDetalle). El código muerto de la bitácora ya no existe (verificado 2026-07-09).
 
 ### Cosméticos
-- `lib/mock-data.ts` tiene ~120 líneas de datos muertos; renombrar a `lib/format.ts`.
-- Archivos basura en raíz: `*.patch`, `vite.config.ts.timestamp-*.mjs`, lockfiles duplicados.
-- `package.json`: name `vite_react_shadcn_ts`, version `0.0.0`.
+- ✅ `lib/mock-data.ts` → renombrado a `lib/format.ts`.
+- ✅ Archivos basura en raíz eliminados. Nota: `package-lock.json` existe porque se usa npm en Windows (bun no está instalado); decidir lockfile oficial.
+- ✅ `package.json`: name `sgp-field-connect`, version `1.0.0`.
 - `ClienteDetalle.tsx` (2.365 líneas) y `Admin.tsx` (1.511) demasiado grandes.
 
 ---
@@ -204,6 +213,26 @@ GIT_DIR=/tmp/tmp_check git log --oneline -5
 - `resultado_id: UUID || null` — NUNCA string vacío `""` (rompe Postgres).
 - `datos_extra: Object.keys(datosExtra).length > 0 ? datosExtra : null`
 - Score en datos_extra: siempre guardar junto con resultado_real.
+
+---
+
+## Estado de sesión 2026-07-09 (retomar acá)
+
+### Hecho hoy (todo en el working tree; verificar si falta commitear)
+1. **Monitoreo en vivo** (`/app/monitoreo`, solo admin/supervisor): feed Realtime + mapa Leaflet + tracking de ejecutivos. Dependencia nueva: `leaflet` (instalada con npm; bun no existe en la máquina del usuario).
+2. **Layout responsive tablet/PC**: AppLayout/AppHeader se ensanchan en md+/xl; Monitoreo a ancho completo (`RUTAS_ANCHAS`).
+3. **Tracking en vivo**: hook `useTracking` + tabla `ubicaciones_ejecutivos` (SQL ya ejecutado en Supabase, Realtime habilitado).
+4. **Auditoría 2026-07-03: 100% cerrada** (C1-C4, A1-A4, M1-M8). Esquema versionado en `supabase/migrations/20260709204905_remote_schema.sql`.
+5. **Modo offline completo**: `offline-queue.ts` (IndexedDB) + `useOfflineSync` + SW v3 con fallback SPA + cache localStorage de clientes/tareas en Registrar. Integrado en Registrar, ClienteDetalle y EventoDetalle.
+
+### Pendiente inmediato (mañana)
+- [ ] Verificar que el usuario commiteó y pusheó el último lote offline (sw.js v3, offline-queue, useOfflineSync, Registrar, ClienteDetalle, EventoDetalle, AppHeader, AppLayout, CLAUDE.md).
+- [ ] Probar offline en el teléfono contra Vercel: abrir con conexión (instala SW v3) → modo avión → registrar desde bitácora → reconectar → verificar sync.
+
+### Backlog acordado (en orden de impacto)
+1. **Anti-fraude GPS**: flag de visitas registradas a >500m del cliente (requiere geocodificar dirección del cliente o usar primera visita como referencia).
+2. **Ruta del día**: ordenar visitas pendientes por cercanía a la posición actual del ejecutivo.
+3. Push notifications (alertas vencidas). 4. Refactor de ClienteDetalle/Admin (muy grandes). 5. Decidir lockfile oficial (npm vs bun).
 
 ---
 

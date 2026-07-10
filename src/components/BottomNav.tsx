@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Home, Users, Plus, BarChart3, Settings, UserPlus, ClipboardList, X, Receipt, TrendingUp } from "lucide-react";
+import { Home, Users, Plus, BarChart3, Settings, UserPlus, ClipboardList, X, Receipt, TrendingUp, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProfile } from "@/hooks/useProfile";
 
@@ -45,12 +45,20 @@ export const BottomNav = () => {
               onClick={() => { setMenuAbierto(false); navigate("/app/registrar"); }}
             />
             {canManage && (
-              <MenuOption
-                icon={<Receipt className="h-5 w-5" />}
-                label="Ver cobros"
-                color="bg-emerald-600"
-                onClick={() => { setMenuAbierto(false); navigate("/app/cobros"); }}
-              />
+              <>
+                <MenuOption
+                  icon={<Receipt className="h-5 w-5" />}
+                  label="Ver cobros"
+                  color="bg-emerald-600"
+                  onClick={() => { setMenuAbierto(false); navigate("/app/cobros"); }}
+                />
+                <MenuOption
+                  icon={<Radio className="h-5 w-5" />}
+                  label="Monitoreo en vivo"
+                  color="bg-rose-600"
+                  onClick={() => { setMenuAbierto(false); navigate("/app/monitoreo"); }}
+                />
+              </>
             )}
           </div>
         </>
