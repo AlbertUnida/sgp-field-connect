@@ -4,7 +4,7 @@ import {
   ArrowLeft, MapPin, Phone, Building2, FileText, Calendar,
   Plus, Car, PhoneCall, Mail, CheckCircle2, Clock, Loader2,
   ChevronDown, ChevronUp, User, UserCheck, Pencil, MessageCircle,
-  AlertTriangle, RotateCcw, Camera, AlertCircle, X, Target
+  AlertTriangle, RotateCcw, AlertCircle, X, Target
 } from "lucide-react";
 import { RESULTADOS_GESTION } from "@/lib/resultados-gestion";
 import { getLeadScoreInfo, scoreHeaderClasses } from "@/lib/lead-score";
@@ -20,91 +20,18 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { filtrarTiposResultado } from "@/lib/utils-field";
 import { encolarGestion, esErrorDeRed } from "@/lib/offline-queue";
-
-interface Cliente {
-  id: number;
-  numero_cliente: number | null;
-  nombre_comercial: string;
-  razon_social: string | null;
-  ruc: string | null;
-  telefono: string | null;
-  email_cliente: string | null;
-  ciudad: string | null;
-  localidad: string | null;
-  barrio: string | null;
-  direccion: string | null;
-  calle_secundaria: string | null;
-  instancia: string | null;
-  estado: string | null;
-  tarifa_mensual: number | null;
-  ejecutivo_id: string | null;
-  creado_por: string | null;
-  activo: boolean;
-  notas: string | null;
-  tipo_cliente: string | null;
-  nombre_salon: string | null;
-  capacidad: number | null;
-  categoria: { nombre: string } | null;
-  rubro_rel: { nombre: string } | null;
-  sub_rubro_id: string | null;
-  fecha_vencimiento: string | null;
-  created_at: string | null;
-}
-
-interface TipoResultado {
-  id: string;
-  nombre: string;
-  tipo_formulario: "sin_medios" | "nota_comercial" | "nota_reclamo" | "visita_seguimiento" | "reunion" | null;
-  tipo_cartera: string;
-  activo: boolean;
-  orden: number;
-}
-
-interface Gestion {
-  id: number;
-  tipo: string;
-  resultado: string | null;
-  resultado_id: string | null;
-  datos_extra: Record<string, unknown> | null;
-  nota: string | null;
-  fecha_inicio: string | null;
-  created_at: string;
-  foto_url: string | null;
-  ejecutivo: { nombre: string; apellido: string } | null;
-}
-
-interface CobroCliente {
-  id: number;
-  monto: number;
-  metodo_pago: string | null;
-  modalidad: string | null;
-  fecha_cobro: string;
-  periodo_desde: string | null;
-  periodo_hasta: string | null;
-  notas: string | null;
-  registrado_por_nombre: string | null;
-  razon_social_factura?: string | null;
-  ruc_factura?: string | null;
-  eventos_ids?: string[] | null;
-}
-
-interface HistorialInstancia {
-  id: number;
-  instancia_anterior: string | null;
-  instancia_nueva: string;
-  created_at: string;
-  ejecutivo: { nombre: string; apellido: string } | null;
-}
-
-interface EventoAgenda {
-  id: string;
-  numero_evento: number;
-  nombre_evento: string | null;
-  fecha_evento: string | null;
-  tipo_evento: string | null;
-  tarifa_evento: number | null;
-  estado: string;
-}
+import { InfoRow } from "@/components/cliente/InfoRow";
+import { FotoGestion } from "@/components/cliente/FotoGestion";
+import {
+  INSTANCIA_COLORS,
+  type Cliente,
+  type TipoResultado,
+  type Gestion,
+  type CobroCliente,
+  type HistorialInstancia,
+  type EventoAgenda,
+  type EjecutivoOpcion,
+} from "@/components/cliente/types";
 
 const TIPOS_GESTION = [
   { key: "visita",    label: "Visita",     icon: Car,       color: "bg-blue-100 text-blue-700" },
@@ -113,19 +40,6 @@ const TIPOS_GESTION = [
   { key: "whatsapp",  label: "WhatsApp",   icon: MessageCircle, color: "bg-emerald-100 text-emerald-700" },
 ];
 
-
-const INSTANCIA_COLORS: Record<string, string> = {
-  CENSO: "bg-gray-500",
-  COMERCIAL: "bg-blue-600",
-  COBRANZAS: "bg-green-600",
-  JURIDICO: "bg-red-600",
-};
-
-interface EjecutivoOpcion {
-  id: string;
-  nombre: string | null;
-  apellido: string | null;
-}
 
 const ClienteDetalle = () => {
   const { id } = useParams();
@@ -2314,57 +2228,6 @@ const ClienteDetalle = () => {
 
       </div>
     </>
-  );
-};
-
-const InfoRow = ({ icon, label, value, valueClass }: {
-  icon: React.ReactNode; label: string; value: string; valueClass?: string;
-}) => (
-  <div className="flex items-start gap-3">
-    <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted-foreground">{icon}</span>
-    <div className="min-w-0 flex-1">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-      <p className={cn("text-sm break-words", valueClass)}>{value}</p>
-    </div>
-  </div>
-);
-
-// A3: Muestra fotos desde bucket privado generando signed URL temporal (1h)
-const FotoGestion = ({ url }: { url: string }) => {
-  const [signedUrl, setSignedUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    const resolve = async () => {
-      // Soporta paths nuevos ("userId/timestamp.jpg") y URLs legacy completas
-      let path = url;
-      if (url.startsWith("http")) {
-        const match = url.match(/\/gestiones-fotos\/(.+?)(\?|$)/);
-        path = match ? decodeURIComponent(match[1]) : url;
-      }
-      const { data } = await supabase.storage
-        .from("gestiones-fotos")
-        .createSignedUrl(path, 3600);
-      if (data?.signedUrl) setSignedUrl(data.signedUrl);
-    };
-    resolve();
-  }, [url]);
-
-  if (!signedUrl) return (
-    <div className="mt-2.5 w-full h-28 rounded-xl bg-muted animate-pulse" />
-  );
-
-  return (
-    <a href={signedUrl} target="_blank" rel="noopener noreferrer" className="mt-2.5 block">
-      <img
-        src={signedUrl}
-        alt="Evidencia de visita"
-        className="w-full rounded-xl object-cover border border-border"
-        style={{ maxHeight: 200 }}
-      />
-      <span className="mt-1 flex items-center gap-1 text-[10px] text-muted-foreground">
-        <Camera className="h-3 w-3" /> Ver foto completa
-      </span>
-    </a>
   );
 };
 
