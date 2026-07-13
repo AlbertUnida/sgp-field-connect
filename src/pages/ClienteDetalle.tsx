@@ -25,6 +25,7 @@ import { FotoGestion } from "@/components/cliente/FotoGestion";
 import { CobroLocalForm } from "@/components/cliente/CobroLocalForm";
 import { CobroEventosForm } from "@/components/cliente/CobroEventosForm";
 import { EventoForm } from "@/components/cliente/EventoForm";
+import { GestionForm } from "@/components/cliente/GestionForm";
 import {
   INSTANCIA_COLORS,
   type Cliente,
@@ -612,6 +613,19 @@ const ClienteDetalle = () => {
     await cargarHistorial();
     setRecuperando(false);
   };
+
+  const cambiarTipoGestion = (key: string) => {
+    setForm((p) => ({ ...p, tipo: key, proxima_accion: "" }));
+    setResultadoId(""); setResultadoReal("");
+    setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega(""); setActaNro("");
+    setContactoNombre(""); setContactoApellido("");
+    setContactoTelefono(cliente?.telefono ?? "");
+    setContactoEmail(cliente?.email_cliente ?? "");
+    setContactoFecha(new Date().toISOString().split("T")[0]);
+  };
+
+  const setFormCampo = (campo: "notas" | "proxima_accion", valor: string) =>
+    setForm((p) => ({ ...p, [campo]: valor }));
 
   const registrarActividad = async () => {
     if (!form.tipo) { toast.error("Seleccioná el tipo de gestión"); return; }
@@ -1347,207 +1361,40 @@ const ClienteDetalle = () => {
             </Button>
 
             {showForm && (
-              <div className="mt-3 rounded-2xl border border-border bg-card p-4 shadow-card space-y-4">
-                {/* Tipo */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tipo de gestión</Label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {TIPOS_GESTION.map((t) => (
-                      <button
-                        key={t.key}
-                        type="button"
-                        onClick={() => {
-                          setForm((p) => ({ ...p, tipo: t.key, proxima_accion: "" }));
-                          // Resetear campos al cambiar canal
-                          setResultadoId(""); setResultadoReal("");
-                          setReceptorNombre(""); setReceptorApellido(""); setFechaEntrega(""); setActaNro("");
-                          setContactoNombre(""); setContactoApellido("");
-                          // Pre-cargar teléfono y email del cliente
-                          setContactoTelefono(cliente?.telefono ?? "");
-                          setContactoEmail(cliente?.email_cliente ?? "");
-                          setContactoFecha(new Date().toISOString().split("T")[0]);
-                        }}
-                        className={cn(
-                          "flex flex-col items-center gap-1.5 rounded-xl border py-3 text-[11px] font-bold uppercase transition-smooth",
-                          form.tipo === t.key ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary text-muted-foreground"
-                        )}
-                      >
-                        <t.icon className="h-4 w-4" />
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Tarea — solo para VISITA */}
-                {mostrarTarea && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tarea <span className="text-destructive">*</span></Label>
-                  <select
-                    value={resultadoId}
-                    onChange={(e) => handleResultadoChange(e.target.value)}
-                    disabled={cargandoResultados}
-                    className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
-                  >
-                    <option value="">Seleccioná la tarea realizada...</option>
-                    {tiposResultadoFiltrados.map((r) => (
-                      <option key={r.id} value={r.id}>{r.nombre}</option>
-                    ))}
-                  </select>
-                </div>
-                )}
-
-                {/* Bloque especial: Nota / Visita Seguimiento / Reunión (con receptor) */}
-                {mostrarTarea && (tipoFormulario === "nota_comercial" || tipoFormulario === "nota_reclamo" ||
-                  tipoFormulario === "visita_seguimiento" || tipoFormulario === "reunion") && (
-                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-                    <p className="text-xs font-bold text-primary uppercase tracking-wider">
-                      📄 {resultadoSeleccionado?.nombre ?? "Datos del receptor"}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground">Datos de quien recibió / estuvo presente.</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nombre <span className="text-destructive">*</span></Label>
-                        <Input placeholder="Nombre" value={receptorNombre} onChange={(e) => setReceptorNombre(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Apellido</Label>
-                        <Input placeholder="Apellido" value={receptorApellido} onChange={(e) => setReceptorApellido(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Fecha</Label>
-                        <Input type="date" value={fechaEntrega} onChange={(e) => setFechaEntrega(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Acta Nro.</Label>
-                        <Input placeholder="Nº de acta" value={actaNro} onChange={(e) => setActaNro(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Bloque contacto: LLAMADA / WHATSAPP */}
-                {(form.tipo === "llamada" || form.tipo === "whatsapp") && (
-                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-                    <p className="text-xs font-bold uppercase tracking-wider text-primary">
-                      {form.tipo === "llamada" ? "📞 Datos de la llamada" : "💬 Datos del WhatsApp"}
-                    </p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Nombre <span className="text-destructive">*</span></Label>
-                        <Input placeholder="Nombre" value={contactoNombre} onChange={(e) => setContactoNombre(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Apellido</Label>
-                        <Input placeholder="Apellido" value={contactoApellido} onChange={(e) => setContactoApellido(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Nro. Teléfono</Label>
-                        <Input placeholder="09X XXX XXX" value={contactoTelefono} onChange={(e) => setContactoTelefono(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Fecha</Label>
-                        <Input type="date" value={contactoFecha} onChange={(e) => setContactoFecha(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Bloque contacto: EMAIL */}
-                {form.tipo === "email" && (
-                  <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-3">
-                    <p className="text-xs font-bold uppercase tracking-wider text-primary">✉️ Datos del destinatario</p>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Nombre</Label>
-                        <Input placeholder="Nombre" value={contactoNombre} onChange={(e) => setContactoNombre(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Apellido</Label>
-                        <Input placeholder="Apellido" value={contactoApellido} onChange={(e) => setContactoApellido(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Email</Label>
-                        <Input type="email" placeholder="correo@ejemplo.com" value={contactoEmail} onChange={(e) => setContactoEmail(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-[10px] font-bold uppercase text-muted-foreground">Fecha</Label>
-                        <Input type="date" value={contactoFecha} onChange={(e) => setContactoFecha(e.target.value)} className="h-9 text-sm" />
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-muted-foreground italic">El resultado se registrará cuando llegue la respuesta.</p>
-                  </div>
-                )}
-
-                {/* Bloque RESULTADO — visita (tras tarea) / llamada / whatsapp */}
-                {mostrarResultado && (
-                  <div className="rounded-xl border border-emerald-500/40 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-3">
-                    <div className="flex items-center gap-2">
-                      <Target className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                      <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-                        Resultado <span className="text-destructive">*</span>
-                      </p>
-                    </div>
-                    <select
-                      value={resultadoReal}
-                      onChange={(e) => setResultadoReal(e.target.value)}
-                      className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm"
-                    >
-                      <option value="">¿Cuál fue el resultado?</option>
-                      {RESULTADOS_GESTION.map((r) => (
-                        <option key={r.key} value={r.key}>{r.label}</option>
-                      ))}
-                    </select>
-                    {resultadoRealObj?.autoAgenda && (
-                      <div className="flex items-center gap-2 rounded-lg bg-amber-100 dark:bg-amber-950/40 px-3 py-2">
-                        <AlertCircle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
-                        <p className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold">
-                          Se agendará revisita automáticamente en 30 días.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Notas / Resumen */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Notas / Resumen</Label>
-                  <Textarea
-                    placeholder="Puntos clave conversados, acuerdos, observaciones..."
-                    value={form.notas}
-                    onChange={(e) => setForm((p) => ({ ...p, notas: e.target.value }))}
-                    rows={3}
-                    className="resize-none"
-                  />
-                </div>
-
-                {/* Próxima acción — oculta si el resultado auto-agenda */}
-                {!resultadoRealObj?.autoAgenda && (
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Próxima acción</Label>
-                    <div className="relative">
-                      <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        type="date"
-                        value={form.proxima_accion}
-                        onChange={(e) => setForm((p) => ({ ...p, proxima_accion: e.target.value }))}
-                        className="h-11 pl-10"
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <Button onClick={registrarActividad} disabled={guardando} className="w-full h-11 gap-2 font-semibold">
-                  {guardando ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  {guardando ? "Guardando..." : "Guardar en bitácora"}
-                </Button>
-              </div>
+              <GestionForm
+                tiposGestion={TIPOS_GESTION}
+                form={form}
+                onCambiarTipo={cambiarTipoGestion}
+                setFormCampo={setFormCampo}
+                resultadoId={resultadoId}
+                onResultadoChange={handleResultadoChange}
+                cargandoResultados={cargandoResultados}
+                tiposResultadoFiltrados={tiposResultadoFiltrados}
+                tipoFormulario={tipoFormulario}
+                tituloReceptor={resultadoSeleccionado?.nombre ?? null}
+                resultadoReal={resultadoReal}
+                setResultadoReal={setResultadoReal}
+                receptorNombre={receptorNombre}
+                setReceptorNombre={setReceptorNombre}
+                receptorApellido={receptorApellido}
+                setReceptorApellido={setReceptorApellido}
+                fechaEntrega={fechaEntrega}
+                setFechaEntrega={setFechaEntrega}
+                actaNro={actaNro}
+                setActaNro={setActaNro}
+                contactoNombre={contactoNombre}
+                setContactoNombre={setContactoNombre}
+                contactoApellido={contactoApellido}
+                setContactoApellido={setContactoApellido}
+                contactoTelefono={contactoTelefono}
+                setContactoTelefono={setContactoTelefono}
+                contactoEmail={contactoEmail}
+                setContactoEmail={setContactoEmail}
+                contactoFecha={contactoFecha}
+                setContactoFecha={setContactoFecha}
+                guardando={guardando}
+                onGuardar={registrarActividad}
+              />
             )}
           </section>
         )}
