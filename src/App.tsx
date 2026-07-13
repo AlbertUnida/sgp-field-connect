@@ -23,6 +23,8 @@ import Cobros from "./pages/Cobros";
 import Scoring from "./pages/Scoring";
 import Monitoreo from "./pages/Monitoreo";
 import RutaDia from "./pages/RutaDia";
+import AsignarCobranzas from "./pages/AsignarCobranzas";
+import DashboardGerencial from "./pages/DashboardGerencial";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound.tsx";
 
@@ -92,6 +94,8 @@ const AppRoutes = () => (
       <Route path="scoring" element={<Scoring />} />
       <Route path="monitoreo" element={<Monitoreo />} />
       <Route path="ruta" element={<RutaDia />} />
+      <Route path="cobranzas-asignar" element={<AsignarCobranzas />} />
+      <Route path="dashboard" element={<DashboardGerencial />} />
     </Route>
     <Route path="/index" element={<Navigate to="/" replace />} />
     <Route path="*" element={<NotFound />} />

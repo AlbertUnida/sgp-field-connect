@@ -99,11 +99,13 @@ const Monitoreo = () => {
   const [loading, setLoading] = useState(true);
   const [enVivo, setEnVivo] = useState(false);
   const [tick, setTick] = useState(0); // re-evalúa vigencia de ubicaciones cada minuto
+  const [verRecorrido, setVerRecorrido] = useState(false);
 
   const mapDivRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<L.LayerGroup | null>(null);
   const trackingRef = useRef<L.LayerGroup | null>(null);
+  const recorridoRef = useRef<L.LayerGroup | null>(null);
 
   const esHoy = fecha === hoyLocal();
 
@@ -311,6 +313,7 @@ const Monitoreo = () => {
     }).addTo(map);
     markersRef.current = L.layerGroup().addTo(map);
     trackingRef.current = L.layerGroup().addTo(map);
+    recorridoRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
     // El contenedor se monta dentro de un grid → recalcular tamaño
     setTimeout(() => map.invalidateSize(), 100);
@@ -319,6 +322,7 @@ const Monitoreo = () => {
       mapRef.current = null;
       markersRef.current = null;
       trackingRef.current = null;
+      recorridoRef.current = null;
     };
   }, []);
 
@@ -386,6 +390,37 @@ const Monitoreo = () => {
     }
   }, [ubicacionesVigentes, colorDe, nombreDe]);
 
+  // Recorrido histórico: polilínea por ejecutivo del día seleccionado
+  useEffect(() => {
+    const capa = recorridoRef.current;
+    if (!capa) return;
+    capa.clearLayers();
+    if (!verRecorrido) return;
+    const cargar = async () => {
+      const inicio = new Date(`${fecha}T00:00:00`);
+      const fin = new Date(inicio);
+      fin.setDate(fin.getDate() + 1);
+      const { data } = await supabase
+        .from("ubicaciones_historial")
+        .select("ejecutivo_id, lat, lng")
+        .gte("created_at", inicio.toISOString())
+        .lt("created_at", fin.toISOString())
+        .order("created_at", { ascending: true });
+      const porEje = new Map<string, [number, number][]>();
+      for (const p of (data ?? []) as { ejecutivo_id: string; lat: number; lng: number }[]) {
+        if (seleccionados.size > 0 && !seleccionados.has(p.ejecutivo_id)) continue;
+        const arr = porEje.get(p.ejecutivo_id) ?? [];
+        arr.push([Number(p.lat), Number(p.lng)]);
+        porEje.set(p.ejecutivo_id, arr);
+      }
+      porEje.forEach((puntos, id) => {
+        if (puntos.length < 2) return;
+        L.polyline(puntos, { color: colorDe(id), weight: 3, opacity: 0.7, dashArray: "6 4" }).addTo(capa);
+      });
+    };
+    cargar();
+  }, [verRecorrido, fecha, seleccionados, colorDe]);
+
   // ── Guard de acceso (después de todos los hooks) ──
   if (!perfilLoading && !canManage) return <Navigate to="/app" replace />;
 
@@ -431,6 +466,15 @@ const Monitoreo = () => {
               {enVivo ? "EN VIVO" : "Conectando..."}
             </span>
           )}
+          <button
+            onClick={() => setVerRecorrido((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-smooth",
+              verRecorrido ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+            )}
+          >
+            <Navigation className="h-3.5 w-3.5" /> Recorrido
+          </button>
           <div className="ml-auto flex items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <Activity className="h-4 w-4" /> {filtradas.length} gestiones

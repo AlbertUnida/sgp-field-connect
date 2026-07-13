@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { addBusinessHours, distanciaMetros, filtrarTiposResultado } from "./utils-field";
+import { addBusinessHours, distanciaMetros, filtrarTiposResultado, ordenarRutaVecinoMasCercano } from "./utils-field";
 
 describe("addBusinessHours", () => {
   it("suma horas dentro del mismo día hábil", () => {
@@ -81,5 +81,40 @@ describe("filtrarTiposResultado", () => {
   it("no muestra reclamos cuando todos están completados", () => {
     const r = filtrarTiposResultado(tipos, "local", new Set(["b", "c"]));
     expect(r.map((t) => t.id)).toEqual(["a"]);
+  });
+});
+
+
+describe("ordenarRutaVecinoMasCercano", () => {
+  const start = { lat: 0, lng: 0 };
+  // Puntos sobre una línea de longitud, desordenados
+  const p = (id: string, lng: number) => ({ id, lat: 0, lng });
+
+  it("encadena por vecino más cercano desde el inicio", () => {
+    const paradas = [p("c", 3), p("a", 1), p("b", 2)];
+    const orden = ordenarRutaVecinoMasCercano(paradas, start).map((x) => x.id);
+    expect(orden).toEqual(["a", "b", "c"]);
+  });
+
+  it("deja las paradas sin coordenadas al final", () => {
+    const paradas = [
+      { id: "x", lat: null, lng: null },
+      { id: "a", lat: 0, lng: 1 },
+      { id: "b", lat: 0, lng: 2 },
+    ];
+    const orden = ordenarRutaVecinoMasCercano(paradas, start).map((x) => x.id);
+    expect(orden).toEqual(["a", "b", "x"]);
+  });
+
+  it("sin inicio devuelve la lista tal cual", () => {
+    const paradas = [p("c", 3), p("a", 1)];
+    expect(ordenarRutaVecinoMasCercano(paradas, null)).toEqual(paradas);
+  });
+
+  it("elige el vecino más cercano aunque no sea el más cercano al inicio", () => {
+    // Desde 0: el más cercano es a(1). Luego desde a(1), el más cercano es b(2), no d(10).
+    const paradas = [p("d", 10), p("b", 2), p("a", 1)];
+    const orden = ordenarRutaVecinoMasCercano(paradas, start).map((x) => x.id);
+    expect(orden).toEqual(["a", "b", "d"]);
   });
 });

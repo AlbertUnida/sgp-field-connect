@@ -165,7 +165,7 @@ const Reportes = () => {
       .gte("fecha_evento", primerDia)
       .lt("fecha_evento", primerDiaSiguiente)
       .order("fecha_evento");
-    setEventosMes((eventosData ?? []) as EventoMes[]);
+    setEventosMes((eventosData ?? []) as unknown as EventoMes[]);
 
     setLoading(false);
   };

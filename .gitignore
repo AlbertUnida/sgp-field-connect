@@ -15,6 +15,9 @@ dist-ssr
 # Supabase CLI (temporales locales, no versionar)
 supabase/.temp/
 
+# Vite/Vitest: configs temporales de esbuild (se generan al correr build/test)
+*.timestamp-*.mjs
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

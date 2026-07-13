@@ -1,6 +1,6 @@
 # ROADMAP — SGP Field Connect
 
-Documento de traspaso y mejoras futuras. Última actualización: 2026-07-10.
+Documento de traspaso y mejoras futuras. Última actualización: 2026-07-11.
 **Para el asistente que retome este proyecto: leé primero `CLAUDE.md` (contexto técnico, reglas de trabajo, estado de sesión) y después este archivo (qué construir a continuación).**
 
 ---
@@ -13,6 +13,8 @@ Documento de traspaso y mejoras futuras. Última actualización: 2026-07-10.
 
 ## Pendiente inmediato (verificar/terminar primero)
 
+0. **Commitear TODO lo de la sesión 2026-07-11** (ver CLAUDE.md → "Estado de sesión 2026-07-11"). El último commit conocido es `b80f3ac` (Refactor Fase 0); todo lo de cobranzas/áreas, dashboard, ruta, monitoreo, fixes de tsc quedó sin commitear. En Windows: `git status` para confirmar, luego `git add <archivos reales>` (NO `git add -A`: evitar el churn de `supabase/schema.sql`, `vercel.json`, `vite.config.ts`, `vitest.config.ts`) y push. Correr las migraciones `20260711130000..170000` en Supabase si aún no se corrieron. Pendiente de este bloque de features: **Fase 1 del refactor** de ClienteDetalle (con click-testing) y el **hardening de RLS** (opcional).
+
 1. **Setup de web push — HECHO (2026-07-10), falta probar en campo.** Ya está todo configurado: tabla `push_suscripciones` + RLS creada en Supabase (migración `supabase/migrations/20260710120000_push_suscripciones.sql`); extensiones `pg_cron` y `pg_net` habilitadas; secrets VAPID + CRON_SECRET cargados (`npx supabase secrets set`); Edge Function `enviar-alertas` deployada; cron `alertas-diarias` activo (jobid 1, `0 11 * * *` = 8am Paraguay); `VITE_VAPID_PUBLIC_KEY` en `.env.local` y en Vercel (Production) con redeploy hecho. **Claves VAPID definitivas: pública `BHOLK0a7kYaBQCgLUdVIbc_HAiBA0zUC2iUBxBA08N8aWHrWB3uU5NHdsmuSanT7IZcAyZiMjKA8hArRa-EtVYg`** (la privada y el CRON_SECRET viven solo en los secrets de Supabase). **Falta:** prueba real — activar desde Perfil → Notificaciones en el celular y disparar la función a mano (`curl.exe -X POST https://sdvhtupgzpchhejxrowg.supabase.co/functions/v1/enviar-alertas -H "Authorization: Bearer <CRON_SECRET>"`); requiere al menos un cliente con visita vencida. Pendiente commitear la migración (ver abajo).
 2. **Verificar commits pendientes** — correr `git status`; puede haber quedado sin commitear el último lote (push, Perfil, sw.js, ROADMAP.md, claude.md).
 3. **Prueba de campo del modo offline** — en el teléfono contra Vercel: abrir con conexión (instala SW v3), modo avión, registrar desde Registrar y desde la bitácora de un cliente, reconectar, verificar sync y foto.
@@ -20,19 +22,19 @@ Documento de traspaso y mejoras futuras. Última actualización: 2026-07-10.
 ## Mejoras futuras (orden de impacto sugerido)
 
 ### Alta prioridad
-4. **Refactor de ClienteDetalle.tsx (2.365 líneas) y Admin.tsx (1.511)** — extraer componentes (bitácora, formulario de gestión, modales de cobro) a `src/components/cliente/`. Sin cambios de comportamiento; verificar contra los patrones de formularios documentados en CLAUDE.md.
-5. **Script de migración de cartera existente** — importador Excel/CSV → Supabase para la carga inicial real: validaciones (RUC, teléfonos), mapeo de rubros/instancias/ejecutivos, `lat/lng` opcionales (NULL si no hay; nunca pisar existentes — regla en CLAUDE.md → "Georreferenciación"). Idealmente página Admin con preview y reporte de filas rechazadas.
-6. **Tests** — hay vitest configurado pero sin suite. Empezar por lo crítico: `offline-queue.ts`, `utils-field.ts` (distancias, addBusinessHours, parseMontoPYG), lógica de alertas vencidas.
+4. **Refactor de ClienteDetalle.tsx / Admin.tsx** — **Fase 0 HECHA (2026-07-11):** creado `src/components/cliente/` con `types.ts` (7 tipos + `INSTANCIA_COLORS`), `InfoRow.tsx` y `FotoGestion.tsx`; ClienteDetalle bajó 2370→2233 líneas, sin cambios de comportamiento (tsc en baseline: 5 errores preexistentes, 0 nuevos; build de Vite OK). **Fase 1 PENDIENTE:** extraer los modales de cobro (local y por lote de eventos) y los formularios de gestión/evento — comparten estado con el padre, así que hacerlo con `npm run dev` corriendo y click-testing por pantalla afectada, de a una extracción. Admin.tsx (1.511) sigue intacto.
+5. **Script de migración de cartera existente** — **DECISIÓN (2026-07-11): diferido al cutover.** No construir la UI contra columnas que aún no conocemos. Ya hecho el núcleo puro `src/lib/importar-cartera.ts` + tests (mapeo de encabezados con alias, validación, resolución nombre→id de categoría/rubro/sub-rubro/ejecutivo, armado del payload igual a NuevoCliente). Al cutover: pedir el export real, terminar la página Admin (~1h). Recomendación acordada: **migrar estado, no historia** (identidad + clasificación + instancia + ejecutivo + datos de pago; sin reproducir gestiones pasadas). Baldes: local→COMERCIAL y local→COBRANZAS son fáciles (misma tabla `clientes`); evento→COMERCIAL es 2ª etapa (los eventos van en `eventos_agenda`, tabla aparte; COBRANZAS es a nivel evento). Hacer dry-run con el preview de rechazadas antes de insertar.
+6. **Tests** — **INICIADO (2026-07-11):** suite viva con `format.test.ts`, `utils-field.test.ts` (distancias, addBusinessHours, filtros), `offline-queue.test.ts` (esErrorDeRed) e `importar-cartera.test.ts`. Falta: lógica de alertas vencidas, filtros de cartera, cálculos de cobros. Nota: en la máquina del usuario `npm test` corre normal; los binarios nativos de Linux solo hicieron falta en el sandbox del asistente.
 
 ### Media prioridad
-7. **Dashboard gerencial** — evolución mensual de cobros vs metas (recharts ya está instalado), ranking de ejecutivos, tasa de conversión CENSO→COMERCIAL→COBRANZAS, heatmap de cobertura por zona/ciudad.
-8. **Historial de recorrido en Monitoreo** — además de la posición actual, dibujar la polilínea del recorrido del día por ejecutivo (guardar histórico de `ubicaciones_ejecutivos` en tabla `ubicaciones_historial` con retención de 7 días, o registrar puntos en localStorage y subirlos con la gestión).
+7. ✅ **Dashboard gerencial (v1, 2026-07-11)** — `src/pages/DashboardGerencial.tsx` (`/app/dashboard`, link en menú "+", gated canManage): KPIs (cobrado del mes, N° cobros, activos, en cobranzas), barra meta del mes, cobros últimos 6 meses (BarChart recharts), ranking de ejecutivos del mes, clientes por instancia (PieChart), cobertura por ciudad. Agrega en JS. Mejora futura: heatmap real por zona, tasa de conversión entre instancias con histórico.
+8. ✅ **Historial de recorrido en Monitoreo — HECHO (2026-07-11)**: tabla `ubicaciones_historial` (migración `20260711170000`, RLS + retención 7 días vía cron `limpiar-ubicaciones-historial`); `useTracking` inserta cada punto; toggle "Recorrido" en Monitoreo dibuja la polilínea del día por ejecutivo (color por persona, respeta filtro y fecha). Requiere correr la migración en Supabase.
 9. **Cobros offline** — la cola offline cubre gestiones; extenderla a cobros (más delicado: montos, requiere validación anti-duplicados al sincronizar).
-10. **Mejoras de Ruta del día** — optimización de orden tipo TSP simple (vecino más cercano ya que hoy es distancia directa), marcar paradas completadas, integrar eventos con fecha de hoy.
+10. ✅ **Mejoras de Ruta del día — COMPLETO (2026-07-11)**: orden TSP vecino más cercano (`ordenarRutaVecinoMasCercano` + tests), marcar paradas completadas (check + localStorage por día + contador), e integración de eventos agendados para hoy (badge violeta, ubicación del venue, link al detalle del evento).
 11. **Notificaciones push adicionales** — hoy solo alertas diarias 8am; agregar: aviso al supervisor de visita sospechosa (anti-fraude), aviso de reasignación de cartera, recordatorio de eventos próximos.
 
 ### Baja prioridad / deuda técnica
-12. **Corregir los 5 errores preexistentes de `tsc`** — tipado de joins de Supabase en ClienteDetalle (3), EventoDetalle (1) y Reportes (1). No afectan el build de Vite; se listan al correr `npx tsc -p tsconfig.app.json --noEmit`.
+12. ✅ **Corregido (2026-07-11)** — los 5 errores de `tsc` (joins de Supabase tipados como array en ClienteDetalle, EventoDetalle, Reportes + reset de `referencia` en cobroEv). Fix type-only (`as unknown as ...`). `npx tsc -p tsconfig.app.json --noEmit` ahora da 0 errores.
 13. **Roles más finos** — hoy los supervisores pueden asignar rol admin (riesgo residual aceptado de C3); revisar si conviene restringir.
 14. **Selector de ejecutivo en Ruta del día para supervisores** — hoy la ruta es solo de la cartera propia.
 15. **Modo oscuro** — el theme de shadcn/Tailwind ya lo soporta a medias; falta toggle y revisión de colores custom (gradient-hero, etc.).

@@ -51,6 +51,13 @@ export function useTracking() {
         .then(({ error }) => {
           if (error) console.warn("Tracking: no se pudo reportar ubicación:", error.message);
         });
+      // Punto de recorrido histórico (acumulativo, para la polilínea de Monitoreo)
+      supabase
+        .from("ubicaciones_historial")
+        .insert({ ejecutivo_id: user.id, lat, lng, accuracy: accuracy ?? null })
+        .then(({ error }) => {
+          if (error) console.warn("Tracking histórico:", error.message);
+        });
     };
 
     const watchId = navigator.geolocation.watchPosition(enviar, () => {}, {

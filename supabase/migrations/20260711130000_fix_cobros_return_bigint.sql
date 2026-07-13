@@ -1,8 +1,19 @@
--- A1: Cobros atómicos — ambas funciones en una sola transacción PostgreSQL
--- Ejecutar en Supabase SQL Editor
+-- Fix cobros: cobros.id es BIGINT (IDENTITY), pero registrar_cobro_local y
+-- registrar_cobro_eventos declaraban `v_cobro_id UUID` y `RETURNS UUID`.
+-- El `RETURNING id INTO v_cobro_id` intentaba meter el id numérico del cobro
+-- en una variable UUID → "invalid input syntax for type uuid: <n>".
+-- Se corrige el tipo a BIGINT en ambas. Cambia el tipo de retorno, así que
+-- hay que DROP + CREATE (CREATE OR REPLACE no permite cambiar RETURNS).
+-- La app ignora el valor devuelto, así que no requiere cambios en el frontend.
 
--- ── RPC 1: Cobro de local (insert cobro + update cliente + historial) ──────
-CREATE OR REPLACE FUNCTION registrar_cobro_local(
+DROP FUNCTION IF EXISTS public.registrar_cobro_local(
+  bigint, uuid, uuid, bigint, text, text, date, date, date, text, text);
+
+DROP FUNCTION IF EXISTS public.registrar_cobro_eventos(
+  bigint, uuid, uuid, bigint, text, text, date, uuid[], text, text, text, text, text, text, text, text);
+
+-- ── RPC 1: Cobro de local ────────────────────────────────────────────────────
+CREATE FUNCTION public.registrar_cobro_local(
   p_cliente_id          BIGINT,
   p_ejecutivo_id        UUID,
   p_registrado_por      UUID,
@@ -26,7 +37,6 @@ DECLARE
   v_dias_vigencia      INT := 30;
   v_fecha_vencimiento  DATE;
 BEGIN
-  -- 1. Obtener instancia actual y días de vigencia del rubro
   SELECT c.instancia, COALESCE(r.dias_vigencia, 30)
   INTO   v_instancia_anterior, v_dias_vigencia
   FROM   clientes c
@@ -35,7 +45,6 @@ BEGIN
 
   v_fecha_vencimiento := p_fecha_cobro + v_dias_vigencia;
 
-  -- 2. Insertar cobro
   INSERT INTO cobros (
     cliente_id, ejecutivo_id, registrado_por, monto,
     metodo_pago, modalidad, fecha_cobro,
@@ -47,15 +56,11 @@ BEGIN
   )
   RETURNING id INTO v_cobro_id;
 
-  -- 3. Mover cliente a COBRANZAS + calcular vencimiento + desasignar ejecutivo
-  --    (queda sin ejecutivo; lo reasigna un supervisor/admin de cobranzas)
   UPDATE clientes
   SET    instancia = 'COBRANZAS',
-         fecha_vencimiento = v_fecha_vencimiento,
-         ejecutivo_id = NULL
+         fecha_vencimiento = v_fecha_vencimiento
   WHERE  id = p_cliente_id;
 
-  -- 4. Registrar en historial de instancias
   INSERT INTO historial_instancias (
     cliente_id, instancia_anterior, instancia_nueva, ejecutivo_id, notas
   ) VALUES (
@@ -70,9 +75,8 @@ BEGIN
 END;
 $$;
 
-
--- ── RPC 2: Cobro de eventos (insert cobro + cerrar eventos) ─────────────────
-CREATE OR REPLACE FUNCTION registrar_cobro_eventos(
+-- ── RPC 2: Cobro de eventos ──────────────────────────────────────────────────
+CREATE FUNCTION public.registrar_cobro_eventos(
   p_cliente_id           BIGINT,
   p_ejecutivo_id         UUID,
   p_registrado_por       UUID,
@@ -98,7 +102,6 @@ AS $$
 DECLARE
   v_cobro_id BIGINT;
 BEGIN
-  -- 1. Insertar cobro con lista de eventos
   INSERT INTO cobros (
     cliente_id, ejecutivo_id, registrado_por, monto,
     metodo_pago, modalidad, fecha_cobro, eventos_ids,
@@ -116,13 +119,21 @@ BEGIN
   )
   RETURNING id INTO v_cobro_id;
 
-  -- 2. Marcar eventos como cerrado + COBRANZAS (mismo transaction)
   UPDATE eventos_agenda
   SET    estado    = 'cerrado',
          instancia = 'COBRANZAS'
   WHERE  id = ANY(p_eventos_ids)
-    AND  cliente_id = p_cliente_id;  -- seguridad extra
+    AND  cliente_id = p_cliente_id;
 
   RETURN v_cobro_id;
 END;
 $$;
+
+-- Permisos (DROP los elimina; se re-otorgan)
+GRANT EXECUTE ON FUNCTION public.registrar_cobro_local(
+  bigint, uuid, uuid, bigint, text, text, date, date, date, text, text)
+  TO anon, authenticated, service_role;
+
+GRANT EXECUTE ON FUNCTION public.registrar_cobro_eventos(
+  bigint, uuid, uuid, bigint, text, text, date, uuid[], text, text, text, text, text, text, text, text)
+  TO anon, authenticated, service_role;

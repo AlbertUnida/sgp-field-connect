@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { MapPin, Navigation, Loader2, RefreshCw, ChevronRight, CalendarClock } from "lucide-react";
+import { MapPin, Navigation, Loader2, RefreshCw, ChevronRight, CalendarClock, CheckCircle2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
-import { capturarGPSPromise, distanciaMetros } from "@/lib/utils-field";
+import { capturarGPSPromise, distanciaMetros, ordenarRutaVecinoMasCercano } from "@/lib/utils-field";
 import { cn } from "@/lib/utils";
 
 /**
@@ -22,6 +22,9 @@ interface Parada {
   diasDesde: number | null; // null = nunca visitado
   limite: number;
   proximaHoy: boolean;
+  esEvento?: boolean;
+  detalle?: string | null; // nombre del evento
+  linkTo: string;
   lat: number | null;
   lng: number | null;
 }
@@ -36,6 +39,20 @@ const RutaDia = () => {
   const [gpsEstado, setGpsEstado] = useState<"buscando" | "ok" | "error">("buscando");
   const [paradas, setParadas] = useState<Parada[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Paradas marcadas como hechas hoy (persisten el día en localStorage)
+  const hoyKey = new Date().toISOString().slice(0, 10);
+  const [completadas, setCompletadas] = useState<Set<string>>(() => {
+    try { return new Set<string>(JSON.parse(localStorage.getItem(`ruta-hechas-${hoyKey}`) || "[]")); }
+    catch { return new Set<string>(); }
+  });
+  const toggleCompletada = (id: string) =>
+    setCompletadas((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      localStorage.setItem(`ruta-hechas-${hoyKey}`, JSON.stringify([...n]));
+      return n;
+    });
 
   const obtenerGPS = useCallback(async () => {
     setGpsEstado("buscando");
@@ -55,7 +72,7 @@ const RutaDia = () => {
       const hace90 = new Date();
       hace90.setDate(hace90.getDate() - 90);
 
-      const [{ data: clientes }, { data: visitas }] = await Promise.all([
+      const [{ data: clientes }, { data: visitas }, { data: eventosHoy }] = await Promise.all([
         supabase
           .from("clientes")
           .select("id, nombre_comercial, ciudad, telefono, proxima_accion, lat, lng, rubro_rel:rubro_id(dias_visita)")
@@ -68,6 +85,12 @@ const RutaDia = () => {
           .eq("tipo", "visita")
           .eq("clientes.ejecutivo_id", user.id)
           .gte("created_at", hace90.toISOString()),
+        supabase
+          .from("eventos_agenda")
+          .select("id, cliente_id, nombre_evento, fecha_evento, estado, cliente:cliente_id(nombre_comercial, ciudad, lat, lng)")
+          .eq("ejecutivo_id", user.id)
+          .eq("fecha_evento", hoyStr)
+          .neq("estado", "cerrado"),
       ]);
 
       // Última visita y coordenadas por cliente
@@ -115,6 +138,7 @@ const RutaDia = () => {
 
         resultado.push({
           id: cid,
+          linkTo: `/app/clientes/${cid}`,
           nombre: c.nombre_comercial,
           ciudad: c.ciudad,
           telefono: c.telefono,
@@ -123,6 +147,27 @@ const RutaDia = () => {
           proximaHoy,
           lat: centro?.lat ?? null,
           lng: centro?.lng ?? null,
+        });
+      }
+
+      // Eventos agendados para hoy (usan la ubicación del venue)
+      for (const e of (eventosHoy ?? []) as unknown as {
+        id: string; cliente_id: number; nombre_evento: string | null;
+        cliente: { nombre_comercial: string; ciudad: string | null; lat: number | null; lng: number | null } | null;
+      }[]) {
+        resultado.push({
+          id: `ev-${e.id}`,
+          linkTo: `/app/clientes/${e.cliente_id}/eventos/${e.id}`,
+          nombre: e.cliente?.nombre_comercial ?? "Evento",
+          ciudad: e.cliente?.ciudad ?? null,
+          telefono: null,
+          diasDesde: null,
+          limite: 0,
+          proximaHoy: false,
+          esEvento: true,
+          detalle: e.nombre_evento,
+          lat: e.cliente?.lat != null ? Number(e.cliente.lat) : null,
+          lng: e.cliente?.lng != null ? Number(e.cliente.lng) : null,
         });
       }
 
@@ -140,13 +185,15 @@ const RutaDia = () => {
         ? distanciaMetros(pos, { lat: p.lat, lng: p.lng })
         : null,
     }));
-    return conDist.sort((a, b) => {
-      if (a.dist != null && b.dist != null) return a.dist - b.dist;
-      if (a.dist != null) return -1;
-      if (b.dist != null) return 1;
-      return (b.diasDesde ?? 9999) - (a.diasDesde ?? 9999);
-    });
+    // Base por urgencia (fallback sin GPS y para las sin ubicación)
+    const base = [...conDist].sort((a, b) => (b.diasDesde ?? 9999) - (a.diasDesde ?? 9999));
+    // Con GPS: ruta por vecino más cercano, encadenando parada a parada
+    return pos ? ordenarRutaVecinoMasCercano(base, pos) : base;
   }, [paradas, pos]);
+
+  const pendientes = ordenadas.filter((x) => !completadas.has(x.id));
+  const hechas = ordenadas.filter((x) => completadas.has(x.id));
+  const visibles = [...pendientes, ...hechas];
 
   return (
     <div className="min-h-screen">
@@ -161,7 +208,7 @@ const RutaDia = () => {
               gpsEstado === "ok" ? "text-emerald-600" : gpsEstado === "error" ? "text-destructive" : "text-muted-foreground animate-pulse"
             )} />
             {gpsEstado === "buscando" && <span className="text-muted-foreground">Buscando tu ubicación...</span>}
-            {gpsEstado === "ok" && <span>Ordenado por cercanía a tu posición</span>}
+            {gpsEstado === "ok" && <span>Ordenado por ruta más corta (vecino más cercano)</span>}
             {gpsEstado === "error" && <span className="text-muted-foreground">Sin GPS — ordenado por urgencia</span>}
           </div>
           <button
@@ -186,15 +233,21 @@ const RutaDia = () => {
             </p>
           </div>
         ) : (
+          <div className="space-y-2">
+          <p className="px-1 text-xs text-muted-foreground">{hechas.length} de {ordenadas.length} visitas hechas</p>
           <ul className="space-y-2.5">
-            {ordenadas.map((p, i) => (
-              <li key={p.id} className="rounded-2xl border border-border bg-card p-4 shadow-card">
+            {visibles.map((p, i) => (
+              <li key={p.id} className={cn("rounded-2xl border border-border bg-card p-4 shadow-card", completadas.has(p.id) && "opacity-60")}>
                 <div className="flex items-start gap-3">
-                  <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">
-                    {i + 1}
-                  </span>
+                  <button
+                    onClick={() => toggleCompletada(p.id)}
+                    title={completadas.has(p.id) ? "Marcar pendiente" : "Marcar como hecha"}
+                    className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold", completadas.has(p.id) ? "bg-success text-white" : "bg-primary text-primary-foreground")}
+                  >
+                    {completadas.has(p.id) ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
+                  </button>
                   <div className="min-w-0 flex-1">
-                    <Link to={`/app/clientes/${p.id}`} className="block">
+                    <Link to={p.linkTo} className="block">
                       <p className="truncate text-sm font-bold">{p.nombre}</p>
                       <p className="text-xs text-muted-foreground">
                         {p.ciudad ?? "Sin ciudad"}
@@ -202,7 +255,11 @@ const RutaDia = () => {
                       </p>
                     </Link>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                      {p.diasDesde === null ? (
+                      {p.esEvento ? (
+                        <span className="flex items-center gap-1 rounded-full bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold text-violet-600">
+                          <CalendarClock className="h-3 w-3" /> Evento hoy{p.detalle ? `: ${p.detalle}` : ""}
+                        </span>
+                      ) : p.diasDesde === null ? (
                         <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-600">
                           Nunca visitado
                         </span>
@@ -211,7 +268,7 @@ const RutaDia = () => {
                           {p.diasDesde} días sin visita (límite {p.limite})
                         </span>
                       ) : null}
-                      {p.proximaHoy && (
+                      {!p.esEvento && p.proximaHoy && (
                         <span className="flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-600">
                           <CalendarClock className="h-3 w-3" /> Agendada para hoy
                         </span>
@@ -231,7 +288,7 @@ const RutaDia = () => {
                     ) : (
                       <span className="text-[10px] text-muted-foreground">Sin ubicación</span>
                     )}
-                    <Link to={`/app/clientes/${p.id}`} className="text-muted-foreground">
+                    <Link to={p.linkTo} className="text-muted-foreground">
                       <ChevronRight className="h-4 w-4" />
                     </Link>
                   </div>
@@ -239,6 +296,7 @@ const RutaDia = () => {
               </li>
             ))}
           </ul>
+          </div>
         )}
 
         {!loading && ordenadas.length > 0 && (

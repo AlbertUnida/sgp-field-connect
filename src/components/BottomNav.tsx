@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Home, Users, Plus, BarChart3, Settings, UserPlus, ClipboardList, X, Receipt, TrendingUp, Radio, Route as RouteIcon } from "lucide-react";
+import { Home, Users, Plus, BarChart3, Settings, UserPlus, ClipboardList, X, Receipt, TrendingUp, Radio, Route as RouteIcon, Wallet, LayoutDashboard } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProfile } from "@/hooks/useProfile";
 
@@ -53,6 +53,12 @@ export const BottomNav = () => {
             {canManage && (
               <>
                 <MenuOption
+                  icon={<LayoutDashboard className="h-5 w-5" />}
+                  label="Dashboard"
+                  color="bg-indigo-600"
+                  onClick={() => { setMenuAbierto(false); navigate("/app/dashboard"); }}
+                />
+                <MenuOption
                   icon={<Receipt className="h-5 w-5" />}
                   label="Ver cobros"
                   color="bg-emerald-600"
@@ -63,6 +69,12 @@ export const BottomNav = () => {
                   label="Monitoreo en vivo"
                   color="bg-rose-600"
                   onClick={() => { setMenuAbierto(false); navigate("/app/monitoreo"); }}
+                />
+                <MenuOption
+                  icon={<Wallet className="h-5 w-5" />}
+                  label="Asignar cobranzas"
+                  color="bg-amber-600"
+                  onClick={() => { setMenuAbierto(false); navigate("/app/cobranzas-asignar"); }}
                 />
               </>
             )}

@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import {
   Users, Target, ChevronDown, ChevronUp, Save, Shield, UserCheck,
   Eye, Loader2, Plus, Building2, Trash2, Tag, MapPin, ChevronRight,
-  Clock, Calendar, BarChart2, AlertTriangle, CalendarClock, ClipboardList, GripVertical, Pencil, Check, X
+  Clock, Calendar, BarChart2, AlertTriangle, CalendarClock, ClipboardList, GripVertical, Pencil, Check, X, Wallet
 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,12 @@ const ROLES = [
   { value: "ejecutivo", label: "Ejecutivo", icon: UserCheck, color: "text-primary" },
   { value: "supervisor", label: "Supervisor", icon: Eye, color: "text-warning" },
   { value: "admin", label: "Admin", icon: Shield, color: "text-destructive" },
+] as const;
+
+const AREAS = [
+  { value: "comercial", label: "Comercial", icon: Building2 },
+  { value: "cobranzas", label: "Cobranzas", icon: Wallet },
+  { value: "juridico", label: "Jurídico", icon: ClipboardList },
 ] as const;
 
 const MES_ACTUAL = new Date().getMonth() + 1;
@@ -99,6 +105,7 @@ const Admin = () => {
   const [nuevoNombre, setNuevoNombre] = useState("");
   const [nuevoApellido, setNuevoApellido] = useState("");
   const [nuevoRol, setNuevoRol] = useState<"ejecutivo" | "supervisor" | "admin">("ejecutivo");
+  const [nuevoArea, setNuevoArea] = useState<"comercial" | "cobranzas" | "juridico">("comercial");
   const [nuevaPassword, setNuevaPassword] = useState("");
   const [creandoUser, setCreandoUser] = useState(false);
 
@@ -232,6 +239,21 @@ const Admin = () => {
     }
   };
 
+  const cambiarArea = async (ejecutivoId: string, area: string) => {
+    const { error, count } = await supabase
+      .from("profiles")
+      .update({ area }, { count: "exact" })
+      .eq("id", ejecutivoId);
+    if (error) {
+      toast.error("Error al cambiar el área: " + error.message);
+    } else if (count === 0) {
+      toast.error("Sin permisos para cambiar el área.");
+    } else {
+      toast.success("Área actualizada ✅");
+      await cargarEjecutivos();
+    }
+  };
+
   const crearUsuario = async () => {
     if (!nuevoEmail || !nuevaPassword || !nuevoNombre) { toast.error("Completá nombre, email y contraseña"); return; }
     if (nuevaPassword.length < 8) { toast.error("La contraseña debe tener al menos 8 caracteres"); return; }
@@ -246,6 +268,7 @@ const Admin = () => {
           nombre: nuevoNombre.trim(),
           apellido: nuevoApellido.trim() || null,
           rol: nuevoRol,
+          area: nuevoArea,
         },
       });
 
@@ -268,7 +291,7 @@ const Admin = () => {
       }
 
       setNuevoEmail(""); setNuevoNombre(""); setNuevoApellido("");
-      setNuevaPassword(""); setNuevoRol("ejecutivo"); setShowNuevoUser(false);
+      setNuevaPassword(""); setNuevoRol("ejecutivo"); setNuevoArea("comercial"); setShowNuevoUser(false);
       await cargarEjecutivos();
 
     } catch (err: any) {
@@ -713,6 +736,18 @@ const Admin = () => {
                     ))}
                   </div>
                 </div>
+                <div className="space-y-1.5">
+                  <Label>Área</Label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {AREAS.map((a) => (
+                      <button key={a.value} type="button" onClick={() => setNuevoArea(a.value)}
+                        className={cn("rounded-xl border px-2 py-2 text-[11px] font-bold uppercase tracking-wide transition-smooth",
+                          nuevoArea === a.value ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary text-muted-foreground")}>
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <Button onClick={crearUsuario} disabled={creandoUser} className="w-full gap-2">
                   {creandoUser ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                   {creandoUser ? "Creando..." : "Crear usuario"}
@@ -721,7 +756,7 @@ const Admin = () => {
             )}
 
             <div>
-              <h2 className="mb-3 text-sm font-bold">Equipo comercial</h2>
+              <h2 className="mb-3 text-sm font-bold">Equipo</h2>
               <div className="space-y-2.5">
                 {ejecutivos.map((ej) => {
                   const isOpen = expanded === ej.id;
@@ -740,6 +775,9 @@ const Admin = () => {
                         <div className="flex items-center gap-2 shrink-0">
                           <span className={cn("flex items-center gap-1 text-[10px] font-bold uppercase", rolInfo.color)}>
                             <RolIcon className="h-3 w-3" />{rolInfo.label}
+                          </span>
+                          <span className="text-[10px] font-semibold uppercase text-muted-foreground">
+                            {AREAS.find((a) => a.value === ej.area)?.label ?? ej.area}
                           </span>
                           {isOpen ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                         </div>
@@ -793,6 +831,18 @@ const Admin = () => {
                                   className={cn("rounded-xl border px-2 py-2 text-[11px] font-bold uppercase tracking-wide transition-smooth",
                                     ej.rol === r.value ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary text-muted-foreground hover:border-primary/40")}>
                                   {r.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="space-y-1.5">
+                            <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Área</Label>
+                            <div className="grid grid-cols-3 gap-2">
+                              {AREAS.map((a) => (
+                                <button key={a.value} type="button" onClick={() => cambiarArea(ej.id, a.value)}
+                                  className={cn("rounded-xl border px-2 py-2 text-[11px] font-bold uppercase tracking-wide transition-smooth",
+                                    ej.area === a.value ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary text-muted-foreground hover:border-primary/40")}>
+                                  {a.label}
                                 </button>
                               ))}
                             </div>

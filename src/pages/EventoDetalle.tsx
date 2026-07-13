@@ -191,7 +191,7 @@ const EventoDetalle = () => {
       .select("id, tipo, resultado, resultado_id, nota, foto_url, fecha_inicio, created_at, datos_extra, ejecutivo:ejecutivo_id(nombre, apellido)")
       .eq("evento_id", eventoId)
       .order("created_at", { ascending: false });
-    if (data) setGestiones(data);
+    if (data) setGestiones(data as unknown as Gestion[]);
     const ids = new Set<string>((data ?? []).map((g: any) => g.resultado_id).filter(Boolean));
     setResultadosCompletados(ids);
   };

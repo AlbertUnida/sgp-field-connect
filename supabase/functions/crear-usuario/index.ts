@@ -60,7 +60,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // ── 3. Parsear body ──
-    const { email, password, nombre, apellido, rol } = await req.json();
+    const { email, password, nombre, apellido, rol, area } = await req.json();
 
     if (!email || !password || !nombre || !rol) {
       return json({ error: "Faltan campos obligatorios: email, password, nombre, rol" }, 400);
@@ -73,6 +73,12 @@ Deno.serve(async (req: Request) => {
     const rolesPermitidos = ["ejecutivo", "supervisor", "admin"];
     if (!rolesPermitidos.includes(rol)) {
       return json({ error: `Rol inválido: ${rol}` }, 400);
+    }
+
+    const areasPermitidas = ["comercial", "cobranzas", "juridico"];
+    const areaFinal = area ?? "comercial";
+    if (!areasPermitidas.includes(areaFinal)) {
+      return json({ error: `Área inválida: ${area}` }, 400);
     }
 
     // Supervisores no pueden crear admins
@@ -103,6 +109,7 @@ Deno.serve(async (req: Request) => {
       p_apellido: apellido?.trim() || null,
       p_rol: rol,
       p_email: email.trim().toLowerCase(),
+      p_area: areaFinal,
     });
 
     if (rpcErr) {

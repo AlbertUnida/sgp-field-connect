@@ -187,6 +187,10 @@ const Clientes = () => {
       } else if (filter === "CENSO") {
         // CENSO: ejecutivo ve los que él creó (ejecutivo_id es null hasta que se asigne)
         matchF = c.instancia === "CENSO" && c.creado_por === user?.id;
+      } else if (filter === "COBRANZAS") {
+        // COBRANZAS es cartera compartida: todos los ejecutivos pueden consultarla.
+        // La edición sigue restringida al ejecutivo asignado (ver ClienteDetalle).
+        matchF = (c.instancia ?? "") === "COBRANZAS";
       } else {
         // Otras instancias: ejecutivo solo ve los suyos (por ejecutivo_id asignado)
         matchF = (c.instancia ?? "CENSO") === filter && c.ejecutivo_id === user?.id;

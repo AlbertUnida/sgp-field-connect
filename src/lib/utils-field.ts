@@ -146,3 +146,36 @@ export function distanciaMetros(
     Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(s));
 }
+
+
+/**
+ * Ordena paradas como una ruta por "vecino más cercano" (TSP heurístico):
+ * arranca en `inicio` y en cada paso elige la parada con coordenadas más
+ * cercana a la anterior. Las paradas sin lat/lng se dejan al final en el
+ * orden recibido. Si no hay `inicio` o ninguna tiene coords, devuelve tal cual.
+ */
+export function ordenarRutaVecinoMasCercano<T extends { lat: number | null; lng: number | null }>(
+  paradas: T[],
+  inicio: { lat: number; lng: number } | null
+): T[] {
+  const conCoord = paradas.filter((p) => p.lat != null && p.lng != null);
+  const sinCoord = paradas.filter((p) => p.lat == null || p.lng == null);
+  if (!inicio || conCoord.length === 0) return paradas;
+
+  const restantes = [...conCoord];
+  const ruta: T[] = [];
+  let actual = inicio;
+  while (restantes.length > 0) {
+    let mejorIdx = 0;
+    let mejorDist = Infinity;
+    for (let i = 0; i < restantes.length; i++) {
+      const p = restantes[i];
+      const d = distanciaMetros(actual, { lat: p.lat as number, lng: p.lng as number });
+      if (d < mejorDist) { mejorDist = d; mejorIdx = i; }
+    }
+    const [elegido] = restantes.splice(mejorIdx, 1);
+    ruta.push(elegido);
+    actual = { lat: elegido.lat as number, lng: elegido.lng as number };
+  }
+  return [...ruta, ...sinCoord];
+}

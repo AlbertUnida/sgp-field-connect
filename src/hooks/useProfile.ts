@@ -9,6 +9,7 @@ export interface Profile {
   apellido: string | null;
   telefono: string | null;
   rol: "admin" | "ejecutivo" | "supervisor";
+  area: "comercial" | "cobranzas" | "juridico";
   activo: boolean;
   avatar_url: string | null;
 }
@@ -27,7 +28,7 @@ export const useProfile = () => {
 
     supabase
       .from("profiles")
-      .select("id, email, nombre, apellido, telefono, rol, activo, avatar_url")
+      .select("id, email, nombre, apellido, telefono, rol, area, activo, avatar_url")
       .eq("id", user.id)
       .maybeSingle()
       .then(({ data, error }) => {

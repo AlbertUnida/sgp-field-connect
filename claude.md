@@ -1,7 +1,7 @@
 # CLAUDE.md — SGP Field Connect
 
 Guía para Claude al trabajar en este repositorio.
-Última actualización: 2026-07-09
+Última actualización: 2026-07-11
 
 ---
 
@@ -121,7 +121,9 @@ ubicaciones_ejecutivos (tracking en vivo)
 - `supervisor` — ve toda la cartera + Admin (CENSO, Categoría, Seguimiento)
 - `admin` — acceso total + Admin completo (Equipo, Tareas, Eventos)
 
-Hook `useProfile` expone: `isAdmin`, `isSupervisor`, `canManage` (admin OR supervisor), `nombreCompleto`.
+Hook `useProfile` expone: `isAdmin`, `isSupervisor`, `canManage` (admin OR supervisor), `nombreCompleto`, y `profile.area`.
+
+**Área / equipo (desde 2026-07-11):** dimensión independiente del rol. `profiles.area` ∈ `comercial` | `cobranzas` | `juridico` (default comercial). El rol es la jerarquía (ejecutivo/supervisor/admin); el área es la cartera. Permite "Supervisor de Cobranzas", "Ejecutivo Comercial", etc. Se setea al crear/editar usuario en Admin → Equipo. Reglas de visibilidad (Clientes.tsx): lectura abierta (todos consultan cualquier cliente vía "Todos"), COBRANZAS es cartera **compartida** (todos la ven), COMERCIAL/CENSO/JURIDICO cada ejecutivo ve solo lo suyo; **la escritura** (gestión, cobro, editar) está restringida a `esPropio || canManage` (ya gateado en ClienteDetalle y Registrar). El Dashboard gerencial se acota por área para supervisores (admin global).
 
 ### Modelo Local vs Evento (CRÍTICO)
 
@@ -223,6 +225,26 @@ GIT_DIR=/tmp/tmp_check git log --oneline -5
 - `resultado_id: UUID || null` — NUNCA string vacío `""` (rompe Postgres).
 - `datos_extra: Object.keys(datosExtra).length > 0 ? datosExtra : null`
 - Score en datos_extra: siempre guardar junto con resultado_real.
+
+---
+
+## Estado de sesión 2026-07-11
+
+Sesión larga, en producción (probado por el usuario en localhost + appweb). Todo pasa `tsc` (0 errores, baseline limpia) y build de Vite.
+
+**Hecho hoy:**
+1. **Bug de cobro (CRÍTICO) resuelto**: `registrar_cobro_local`/`_eventos` declaraban `RETURNS UUID` + `v_cobro_id UUID` pero `cobros.id` es BIGINT → "invalid input syntax for type uuid" en cada cobro. Fix a BIGINT (migración `20260711130000`). Era bug del repo desde siempre (A1 nunca se probó con cobro real). También `debito` agregado al check `cobros_metodo_pago_check` (`20260711140000`).
+2. **Carteras por Área** (rol + área, ver sección Roles): columna `profiles.area` + `admin_set_user_profile` con `p_area` (`20260711160000`), Edge Function `crear-usuario` acepta `area` (REDEPLOYADA), selector Rol+Área en Admin (crear y editar), área en la lista de equipo. Al cobrar, el cliente pasa a COBRANZAS **sin ejecutivo** (`20260711150000`); pantalla `AsignarCobranzas.tsx` (`/app/cobranzas-asignar`) para asignarlo a un ejecutivo de cobranzas. COBRANZAS compartida en Clientes.tsx.
+3. **Dashboard gerencial** `DashboardGerencial.tsx` (`/app/dashboard`, acotado por área; admin global): KPIs, cobros 6 meses, ranking, instancias (pie), cobertura por ciudad. recharts.
+4. **Ruta del día**: orden por vecino más cercano (`ordenarRutaVecinoMasCercano` + tests), marcar paradas completadas (localStorage/día), eventos de hoy integrados.
+5. **Monitoreo — historial de recorrido**: tabla `ubicaciones_historial` (`20260711170000`, RLS + cron limpieza 7 días, jobid 2), `useTracking` inserta puntos, toggle "Recorrido" dibuja polilínea por ejecutivo.
+6. **Refactor ClienteDetalle Fase 0**: tipos + presentacionales a `src/components/cliente/` (CobroLocalForm, InfoRow, FotoGestion, types). **Fase 1 PENDIENTE** (extraer forms de gestión/evento y cobro de eventos — con click-testing del usuario).
+7. **5 errores preexistentes de tsc corregidos** (joins Supabase `as unknown as`). tsc en 0.
+8. **Tests**: suite viva (format, utils-field, offline-queue, importar-cartera). Importador de cartera: núcleo hecho, UI diferida al cutover.
+
+**Migraciones a correr en Supabase (si el usuario aún no lo hizo): 20260711130000, 140000, 150000, 160000, 170000.** Las de esta sesión el usuario ya las fue corriendo.
+
+**Nota entorno del asistente:** el auto-formateador del mount trunca archivos .tsx/.ts al editarlos con Edit/Write en archivos grandes → usar escritura atómica (Python/heredoc) y verificar `tail` + `tsc`. Correr tests/build en el sandbox necesita parchear binarios nativos Linux (rollup/esbuild/swc) vía NODE_PATH/ESBUILD_BINARY_PATH; en la máquina del usuario `npm test`/`npm run build` corren normal.
 
 ---
 
