@@ -210,6 +210,7 @@ const ClienteDetalle = () => {
       .from("eventos_agenda")
       .select("id, numero_evento, nombre_evento, fecha_evento, tipo_evento, tarifa_evento, estado")
       .eq("cliente_id", parseInt(id!))
+      .neq("instancia", "COBRANZAS")
       .order("fecha_evento", { ascending: true });
     setEventosAgenda(data ?? []);
     setLoadingEventos(false);
@@ -439,7 +440,7 @@ const ClienteDetalle = () => {
     setCobro({ monto: "", metodo_pago: "efectivo", modalidad: "mensual",
       fecha_cobro: hoy, periodo_desde: hoy, periodo_hasta: "", referencia: "", notas: "" });
     setShowCobro(false);
-    await Promise.all([cargarCliente(), cargarCobros(), cargarHistorial()]);
+    await Promise.all([cargarCliente(), cargarCobros(), cargarHistorial(), cargarEventos()]);
     setGuardandoCobro(false);
   };
 
@@ -516,7 +517,7 @@ const ClienteDetalle = () => {
     setShowCobroEventos(false);
     setModoSeleccion(false);
     setCobroEv({ monto: "", metodo_pago: "efectivo", modalidad: "pago_unico", fecha_cobro: hoy, razon_social_factura: "", ruc_factura: "", lugar_evento: "", direccion_evento: "", email_contacto: "", telefono_contacto: "", referencia: "", notas: "" });
-    await Promise.all([cargarCliente(), cargarCobros(), cargarHistorial()]);
+    await Promise.all([cargarCliente(), cargarCobros(), cargarHistorial(), cargarEventos()]);
     setGuardandoCobroEv(false);
   };
   // ────────────────────────────────────────────────────────────────────────────
