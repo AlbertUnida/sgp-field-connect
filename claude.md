@@ -238,11 +238,13 @@ Sesión larga, en producción (probado por el usuario en localhost + appweb). To
 3. **Dashboard gerencial** `DashboardGerencial.tsx` (`/app/dashboard`, acotado por área; admin global): KPIs, cobros 6 meses, ranking, instancias (pie), cobertura por ciudad. recharts.
 4. **Ruta del día**: orden por vecino más cercano (`ordenarRutaVecinoMasCercano` + tests), marcar paradas completadas (localStorage/día), eventos de hoy integrados.
 5. **Monitoreo — historial de recorrido**: tabla `ubicaciones_historial` (`20260711170000`, RLS + cron limpieza 7 días, jobid 2), `useTracking` inserta puntos, toggle "Recorrido" dibuja polilínea por ejecutivo.
-6. **Refactor ClienteDetalle Fase 0**: tipos + presentacionales a `src/components/cliente/` (CobroLocalForm, InfoRow, FotoGestion, types). **Fase 1 PENDIENTE** (extraer forms de gestión/evento y cobro de eventos — con click-testing del usuario).
+6. **Refactor ClienteDetalle Fases 0 y 1 COMPLETAS** (probado por el usuario canal por canal). `src/components/cliente/`: `types.ts`, `InfoRow`, `FotoGestion` (Fase 0) + los 4 formularios grandes `CobroLocalForm`, `CobroEventosForm`, `EventoForm`, `GestionForm` (Fase 1). ClienteDetalle pasó de **2370 → 1696 líneas**. Lo que queda en el archivo es render de solo lectura (ficha, bitácora, historiales). El padre conserva todo el estado/lógica; los componentes son presentacionales (props). En `GestionForm` los props van con nombres 1:1 para evitar cruces.
+   - **Fixes de eventos** (probados): al cobrar eventos se recarga la lista (`cargarEventos` en el Promise.all de reload) y `cargarEventos` excluye los cobrados (`.neq("instancia","COBRANZAS")`), así en la ficha del cliente solo se ven los pendientes.
+   - **Fix RLS del cobro** (migración `20260711180000`): la política "Editar clientes" solo tenía USING; al desasignar (`ejecutivo_id=NULL`) un ejecutivo no pasaba el WITH CHECK implícito → se agregó WITH CHECK que permite `ejecutivo_id IS NULL`. Ahora un ejecutivo puede cobrar.
 7. **5 errores preexistentes de tsc corregidos** (joins Supabase `as unknown as`). tsc en 0.
 8. **Tests**: suite viva (format, utils-field, offline-queue, importar-cartera). Importador de cartera: núcleo hecho, UI diferida al cutover.
 
-**Migraciones a correr en Supabase (si el usuario aún no lo hizo): 20260711130000, 140000, 150000, 160000, 170000.** Las de esta sesión el usuario ya las fue corriendo.
+**Migraciones a correr en Supabase (si el usuario aún no lo hizo): 20260711130000, 140000, 150000, 160000, 170000, 180000.** Las de esta sesión el usuario ya las fue corriendo (incluida la 180000 del fix RLS de cobro).
 
 **Nota entorno del asistente:** el auto-formateador del mount trunca archivos .tsx/.ts al editarlos con Edit/Write en archivos grandes → usar escritura atómica (Python/heredoc) y verificar `tail` + `tsc`. Correr tests/build en el sandbox necesita parchear binarios nativos Linux (rollup/esbuild/swc) vía NODE_PATH/ESBUILD_BINARY_PATH; en la máquina del usuario `npm test`/`npm run build` corren normal.
 
