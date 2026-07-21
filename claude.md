@@ -1,7 +1,7 @@
 # CLAUDE.md — SGP Field Connect
 
 Guía para Claude al trabajar en este repositorio.
-Última actualización: 2026-07-11
+Última actualización: 2026-07-21
 
 ---
 
@@ -196,7 +196,7 @@ GIT_DIR=/tmp/tmp_check git log --oneline -5
 - ✅ `lib/mock-data.ts` → renombrado a `lib/format.ts`.
 - ✅ Archivos basura en raíz eliminados. Nota: `package-lock.json` existe porque se usa npm en Windows (bun no está instalado); decidir lockfile oficial.
 - ✅ `package.json`: name `sgp-field-connect`, version `1.0.0`.
-- `ClienteDetalle.tsx` (2.365 líneas) y `Admin.tsx` (1.511) demasiado grandes.
+- ✅ `ClienteDetalle.tsx` (2370→1696) y `Admin.tsx` (1534→286) refactorizados en componentes (`src/components/cliente/` y `src/components/admin/`).
 
 ---
 
@@ -225,6 +225,26 @@ GIT_DIR=/tmp/tmp_check git log --oneline -5
 - `resultado_id: UUID || null` — NUNCA string vacío `""` (rompe Postgres).
 - `datos_extra: Object.keys(datosExtra).length > 0 ? datosExtra : null`
 - Score en datos_extra: siempre guardar junto con resultado_real.
+
+---
+
+## Estado de sesión 2026-07-21
+
+Sesión corta enfocada en el **refactor de Admin.tsx** (mismo enfoque que ClienteDetalle). Todo pasa `tsc` (0 errores). El build de Vite no se pudo confirmar en el sandbox del asistente (timeout por FUSE), pero en la máquina del usuario corre normal.
+
+**Hecho hoy:**
+1. **Refactor Admin.tsx COMPLETO** — las 6 secciones extraídas a `src/components/admin/`:
+   - `EquipoSection.tsx` (híbrido: estado propio de crear/editar usuario; recibe `ejecutivos` + `onReload` por prop del padre).
+   - `CensoSection.tsx` (presentacional puro: props del padre — clientes CENSO, asignaciones, ejecutivosSolo, handlers).
+   - `CatalogoSection.tsx`, `EventosSection.tsx`, `ResultadosSection.tsx` (autocontenidas: cargan sus propios datos en `useEffect` de montaje, 0-1 props).
+   - `SeguimientoSection.tsx` (recibe `ejecutivos` por prop; usa `addBusinessHours`).
+   - **Admin.tsx: 1534 → 286 líneas (−81%).** El padre conserva solo `ejecutivos` + CENSO (compartidos entre tabs). Sin cambios de comportamiento.
+2. Fixes de tsc durante la extracción: `editNombre` faltante en ResultadosSection; `ejecutivos`/`addBusinessHours`/iconos faltantes en SeguimientoSection (se pasó `ejecutivos` como prop); `parseMontoPYG` + init de metas/nombres/apellidos movidos a un `useEffect([ejecutivos])` dentro de EquipoSection.
+
+**PENDIENTE al retomar:**
+- **Commitear** (usuario, desde PowerShell): `git add src/components/admin/EquipoSection.tsx src/components/admin/CensoSection.tsx src/components/admin/CatalogoSection.tsx src/components/admin/EventosSection.tsx src/components/admin/ResultadosSection.tsx src/components/admin/SeguimientoSection.tsx src/pages/Admin.tsx` (+ CLAUDE.md/ROADMAP.md; recordar `git add claude.md` en minúscula). NO `git add -A`.
+- **Click-test** de cada tab de Admin, sobre todo EQUIPO (crear usuario Rol+Área, editar nombre/rol/área inline, setear meta) y verificar que el cambio se refleje en CENSO/Seguimiento (comparten la lista `ejecutivos`).
+- **Hardening de RLS** — analizado hoy, ver ROADMAP ítem 18. Recomendación: hacer primero el **Camino B (apretar escritura)**, que es 1 migración de bajo riesgo (gestiones con `ejecutivo_id` spoofeable, `update_eventos_agenda` USING(true), catálogo de eventos abierto). El Camino A (cerrar SELECT) es riesgoso porque la app depende de lectura abierta; dejar para una ventana con pruebas.
 
 ---
 
