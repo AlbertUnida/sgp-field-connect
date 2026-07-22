@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { capturarGPSPromise, aplicarMarcaDeAgua, filtrarTiposResultado } from "@/lib/utils-field";
 import { encolarGestion, esErrorDeRed } from "@/lib/offline-queue";
+import { fijarUbicacionSiFalta } from "@/lib/georef";
 
 // Cache local de datos de referencia para poder registrar sin señal
 const CACHE_CLIENTES = "sgp-cache-clientes-registrar";
@@ -484,6 +485,11 @@ const Registrar = () => {
         }
       } else {
         await supabase.from("clientes").update(clienteUpdateData).eq("id", clienteSeleccionado.id);
+
+        // Georreferenciación: la primera visita con GPS fija la ubicación del cliente
+        if (tipo === "visita") {
+          await fijarUbicacionSiFalta(clienteSeleccionado.id, coordenadas?.lat, coordenadas?.lng);
+        }
 
         if (autoAgenda) {
           toast.success("Gestión guardada. Próxima visita agendada en 30 días ✅");

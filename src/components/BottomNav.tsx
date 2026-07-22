@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Home, Users, Plus, BarChart3, Settings, UserPlus, ClipboardList, X, Receipt, TrendingUp, Radio, Route as RouteIcon, Wallet, LayoutDashboard } from "lucide-react";
+import { Home, Users, Plus, BarChart3, Settings, UserPlus, ClipboardList, X, Receipt, TrendingUp, Radio, Route as RouteIcon, Wallet, LayoutDashboard, MapPin } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProfile } from "@/hooks/useProfile";
 
@@ -69,6 +69,12 @@ export const BottomNav = () => {
                   label="Monitoreo en vivo"
                   color="bg-rose-600"
                   onClick={() => { setMenuAbierto(false); navigate("/app/monitoreo"); }}
+                />
+                <MenuOption
+                  icon={<MapPin className="h-5 w-5" />}
+                  label="Georreferenciación"
+                  color="bg-teal-600"
+                  onClick={() => { setMenuAbierto(false); navigate("/app/georreferenciacion"); }}
                 />
                 <MenuOption
                   icon={<Wallet className="h-5 w-5" />}

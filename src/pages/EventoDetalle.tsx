@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { capturarGPSPromise, aplicarMarcaDeAgua, filtrarTiposResultado } from "@/lib/utils-field";
 import { encolarGestion, esErrorDeRed } from "@/lib/offline-queue";
+import { fijarUbicacionSiFalta } from "@/lib/georef";
 
 interface Evento {
   id: string;
@@ -365,6 +366,10 @@ const EventoDetalle = () => {
         return;
       }
     } else {
+      // Georreferenciación: la primera visita con GPS fija la ubicación del venue/cliente
+      if (formTipo === "visita") {
+        await fijarUbicacionSiFalta(evento.cliente_id, coordenadas?.lat, coordenadas?.lng);
+      }
       toast.success("✅ Gestión registrada");
     }
 

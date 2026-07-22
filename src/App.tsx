@@ -25,6 +25,7 @@ import Monitoreo from "./pages/Monitoreo";
 import RutaDia from "./pages/RutaDia";
 import AsignarCobranzas from "./pages/AsignarCobranzas";
 import DashboardGerencial from "./pages/DashboardGerencial";
+import Georreferenciacion from "./pages/Georreferenciacion";
 import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound.tsx";
 
@@ -96,6 +97,7 @@ const AppRoutes = () => (
       <Route path="ruta" element={<RutaDia />} />
       <Route path="cobranzas-asignar" element={<AsignarCobranzas />} />
       <Route path="dashboard" element={<DashboardGerencial />} />
+      <Route path="georreferenciacion" element={<Georreferenciacion />} />
     </Route>
     <Route path="/index" element={<Navigate to="/" replace />} />
     <Route path="*" element={<NotFound />} />

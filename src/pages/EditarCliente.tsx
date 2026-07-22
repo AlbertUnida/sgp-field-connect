@@ -1,16 +1,26 @@
 import { useEffect, useState } from "react";
 import { parseMontoPYG } from "@/lib/format";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Save, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Loader2, MapPin, LocateFixed, X } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { MapaUbicacionPicker } from "@/components/MapaUbicacionPicker";
 import { supabase } from "@/lib/supabaseClient";
 import { useAuth } from "@/contexts/AuthContext";
 import { useProfile } from "@/hooks/useProfile";
 import { toast } from "sonner";
+
+/** Parsea "lat, lng" (formato de Google Maps / app de visitas) a números válidos. */
+const parseLatLng = (texto: string): { lat: number; lng: number } | null => {
+  const m = texto.trim().match(/^\s*(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (!m) return null;
+  const lat = Number(m[1]), lng = Number(m[2]);
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+};
 
 interface Categoria { id: string; nombre: string; }
 interface Rubro { id: string; categoria_id: string; nombre: string; }
@@ -31,6 +41,10 @@ const EditarCliente = () => {
   const [subRubrosFiltrados, setSubRubrosFiltrados] = useState<SubRubro[]>([]);
 
   const [tipoCliente, setTipoCliente] = useState<"local" | "evento">("local");
+  const [lat, setLat] = useState<number | null>(null);
+  const [lng, setLng] = useState<number | null>(null);
+  const [pegarCoord, setPegarCoord] = useState("");
+  const [ubicandoGps, setUbicandoGps] = useState(false);
   const [form, setForm] = useState({
     nombre_comercial: "",
     razon_social: "",
@@ -85,6 +99,8 @@ const EditarCliente = () => {
       }
 
       setTipoCliente(cliente.tipo_cliente === "evento" ? "evento" : "local");
+      setLat(cliente.lat != null ? Number(cliente.lat) : null);
+      setLng(cliente.lng != null ? Number(cliente.lng) : null);
       setForm({
         nombre_comercial: cliente.nombre_comercial ?? "",
         razon_social: cliente.razon_social ?? "",
@@ -152,6 +168,9 @@ const EditarCliente = () => {
       // Campos del venue
       nombre_salon: tipoCliente === "evento" ? form.nombre_salon.trim() || null : null,
       capacidad: tipoCliente === "evento" ? parseMontoPYG(form.capacidad) : null,
+      // Georreferenciación (carga manual de managers)
+      lat,
+      lng,
     }, { count: "exact" }).eq("id", id);
 
     if (error) {
@@ -168,6 +187,27 @@ const EditarCliente = () => {
 
     toast.success("Cliente actualizado ✅");
     navigate(`/app/clientes/${id}`);
+  };
+
+  const usarMiUbicacion = () => {
+    if (!navigator.geolocation) { toast.error("GPS no disponible en este dispositivo"); return; }
+    setUbicandoGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setLat(pos.coords.latitude);
+        setLng(pos.coords.longitude);
+        setUbicandoGps(false);
+        toast.success("Ubicación tomada del GPS");
+      },
+      () => { setUbicandoGps(false); toast.error("No se pudo obtener el GPS"); },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const aplicarPegado = (texto: string) => {
+    setPegarCoord(texto);
+    const p = parseLatLng(texto);
+    if (p) { setLat(p.lat); setLng(p.lng); }
   };
 
   if (loading) {
@@ -275,6 +315,60 @@ const EditarCliente = () => {
             value={form.direccion} onChange={(v) => set("direccion", v)} />
           <Campo label="Calle secundaria" placeholder="Esq. Brasil"
             value={form.calle_secundaria} onChange={(v) => set("calle_secundaria", v)} />
+
+          {/* Georreferenciación (carga manual) — solo managers */}
+          {canManage && (
+            <div className="space-y-3 border-t border-border pt-4">
+              <div className="flex items-center justify-between">
+                <Label className="flex items-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5 text-primary" /> Coordenadas del local
+                </Label>
+                {lat != null && lng != null && (
+                  <button
+                    type="button"
+                    onClick={() => { setLat(null); setLng(null); setPegarCoord(""); }}
+                    className="flex items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-destructive"
+                  >
+                    <X className="h-3 w-3" /> Quitar
+                  </button>
+                )}
+              </div>
+
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Pegar: -25.2894, -57.6624"
+                  value={pegarCoord}
+                  onChange={(e) => aplicarPegado(e.target.value)}
+                  className="h-11 flex-1"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={usarMiUbicacion}
+                  disabled={ubicandoGps}
+                  className="h-11 shrink-0 gap-1.5"
+                >
+                  {ubicandoGps ? <Loader2 className="h-4 w-4 animate-spin" /> : <LocateFixed className="h-4 w-4" />}
+                  GPS
+                </Button>
+              </div>
+
+              <p className="text-[11px] text-muted-foreground">
+                Pegá las coordenadas de Google Maps o de la app de visitas, tocá el mapa, o arrastrá el pin.
+                {lat != null && lng != null && (
+                  <span className="block mt-0.5 font-mono text-foreground">
+                    {lat.toFixed(6)}, {lng.toFixed(6)}
+                  </span>
+                )}
+              </p>
+
+              <MapaUbicacionPicker
+                lat={lat}
+                lng={lng}
+                onChange={(la, ln) => { setLat(la); setLng(ln); setPegarCoord(""); }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Licencia — campo clave */}

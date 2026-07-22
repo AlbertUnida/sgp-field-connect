@@ -100,12 +100,15 @@ const Monitoreo = () => {
   const [enVivo, setEnVivo] = useState(false);
   const [tick, setTick] = useState(0); // re-evalúa vigencia de ubicaciones cada minuto
   const [verRecorrido, setVerRecorrido] = useState(false);
+  const [verClientes, setVerClientes] = useState(false);
+  const [clientesGeo, setClientesGeo] = useState<{ id: number; nombre_comercial: string; lat: number; lng: number; tipo_cliente: string | null }[]>([]);
 
   const mapDivRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef<L.LayerGroup | null>(null);
   const trackingRef = useRef<L.LayerGroup | null>(null);
   const recorridoRef = useRef<L.LayerGroup | null>(null);
+  const clientesRef = useRef<L.LayerGroup | null>(null);
 
   const esHoy = fecha === hoyLocal();
 
@@ -314,6 +317,7 @@ const Monitoreo = () => {
     markersRef.current = L.layerGroup().addTo(map);
     trackingRef.current = L.layerGroup().addTo(map);
     recorridoRef.current = L.layerGroup().addTo(map);
+    clientesRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
     // El contenedor se monta dentro de un grid → recalcular tamaño
     setTimeout(() => map.invalidateSize(), 100);
@@ -323,8 +327,47 @@ const Monitoreo = () => {
       markersRef.current = null;
       trackingRef.current = null;
       recorridoRef.current = null;
+      clientesRef.current = null;
     };
   }, []);
+
+  // Pines de clientes georreferenciados (toggle "Clientes")
+  useEffect(() => {
+    const capa = clientesRef.current;
+    if (!capa) return;
+    capa.clearLayers();
+    if (!verClientes) return;
+    let cancelado = false;
+    const cargar = async () => {
+      let lista = clientesGeo;
+      if (lista.length === 0) {
+        const { data } = await supabase
+          .from("clientes")
+          .select("id, nombre_comercial, lat, lng, tipo_cliente")
+          .eq("activo", true)
+          .not("lat", "is", null)
+          .limit(5000);
+        lista = ((data ?? []) as { id: number; nombre_comercial: string; lat: number | null; lng: number | null; tipo_cliente: string | null }[])
+          .filter((c) => c.lat != null && c.lng != null)
+          .map((c) => ({ id: c.id, nombre_comercial: c.nombre_comercial, lat: Number(c.lat), lng: Number(c.lng), tipo_cliente: c.tipo_cliente }));
+        if (cancelado) return;
+        setClientesGeo(lista);
+      }
+      for (const c of lista) {
+        L.circleMarker([c.lat, c.lng], {
+          radius: 5,
+          color: c.tipo_cliente === "evento" ? "#d97706" : "#0d9488",
+          weight: 2,
+          fillColor: c.tipo_cliente === "evento" ? "#f59e0b" : "#14b8a6",
+          fillOpacity: 0.6,
+        })
+          .bindPopup(`<strong>${c.nombre_comercial}</strong><br/><span style="text-transform:capitalize">${c.tipo_cliente === "evento" ? "Venue / evento" : "Local"}</span>`)
+          .addTo(capa);
+      }
+    };
+    cargar();
+    return () => { cancelado = true; };
+  }, [verClientes, clientesGeo]);
 
   // Pins de visitas
   useEffect(() => {
@@ -474,6 +517,15 @@ const Monitoreo = () => {
             )}
           >
             <Navigation className="h-3.5 w-3.5" /> Recorrido
+          </button>
+          <button
+            onClick={() => setVerClientes((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold transition-smooth",
+              verClientes ? "bg-teal-600 text-white" : "bg-muted text-muted-foreground"
+            )}
+          >
+            <MapPin className="h-3.5 w-3.5" /> Clientes
           </button>
           <div className="ml-auto flex items-center gap-4 text-sm text-muted-foreground">
             <span className="flex items-center gap-1.5">
