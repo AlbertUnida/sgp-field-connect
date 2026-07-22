@@ -162,38 +162,55 @@ const Registrar = () => {
       query = query.eq("ejecutivo_id", user!.id);
     }
 
-    const { data } = await query;
-    if (data) {
-      setClientes(data);
-      try { localStorage.setItem(CACHE_CLIENTES, JSON.stringify(data)); } catch { /* cache lleno: ignorar */ }
-    } else {
+    const usarCache = () => {
       // Sin conexión: usar la última lista cacheada
       try {
         const cache = localStorage.getItem(CACHE_CLIENTES);
         if (cache) setClientes(JSON.parse(cache));
       } catch { /* cache corrupto: ignorar */ }
+    };
+    try {
+      const { data } = await query;
+      if (data) {
+        setClientes(data);
+        try { localStorage.setItem(CACHE_CLIENTES, JSON.stringify(data)); } catch { /* cache lleno: ignorar */ }
+      } else {
+        usarCache();
+      }
+    } catch {
+      // Algunos errores de red rechazan en vez de devolver { data: null }
+      usarCache();
+    } finally {
+      setCargandoClientes(false);
     }
-    setCargandoClientes(false);
   };
 
   const cargarResultados = async () => {
     setCargandoResultados(true);
-    const { data } = await supabase
-      .from("tipos_resultado")
-      .select("id, nombre, tipo_formulario, tipo_cartera, activo, orden")
-      .eq("activo", true)
-      .order("orden")
-      .order("nombre");
-    if (data) {
-      setTiposResultado(data);
-      try { localStorage.setItem(CACHE_RESULTADOS, JSON.stringify(data)); } catch { /* cache lleno: ignorar */ }
-    } else {
+    try {
+      const { data } = await supabase
+        .from("tipos_resultado")
+        .select("id, nombre, tipo_formulario, tipo_cartera, activo, orden")
+        .eq("activo", true)
+        .order("orden")
+        .order("nombre");
+      if (data) {
+        setTiposResultado(data);
+        try { localStorage.setItem(CACHE_RESULTADOS, JSON.stringify(data)); } catch { /* cache lleno: ignorar */ }
+      } else {
+        try {
+          const cache = localStorage.getItem(CACHE_RESULTADOS);
+          if (cache) setTiposResultado(JSON.parse(cache));
+        } catch { /* cache corrupto: ignorar */ }
+      }
+    } catch {
       try {
         const cache = localStorage.getItem(CACHE_RESULTADOS);
         if (cache) setTiposResultado(JSON.parse(cache));
       } catch { /* cache corrupto: ignorar */ }
+    } finally {
+      setCargandoResultados(false);
     }
-    setCargandoResultados(false);
   };
 
   // Filtrar por texto o por ID numérico

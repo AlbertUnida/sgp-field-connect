@@ -26,6 +26,14 @@ export const useProfile = () => {
       return;
     }
 
+    const CACHE_KEY = `sgp-cache-profile-${user.id}`;
+
+    // Semilla desde cache para funcionar offline y evitar perfil null
+    try {
+      const cache = localStorage.getItem(CACHE_KEY);
+      if (cache) setProfile(JSON.parse(cache));
+    } catch { /* cache corrupto: ignorar */ }
+
     supabase
       .from("profiles")
       .select("id, email, nombre, apellido, telefono, rol, area, activo, avatar_url")
@@ -33,7 +41,16 @@ export const useProfile = () => {
       .maybeSingle()
       .then(({ data, error }) => {
         if (error) console.error("Error cargando perfil:", error);
-        setProfile(data ?? null);
+        if (data) {
+          setProfile(data);
+          try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)); } catch { /* lleno: ignorar */ }
+        }
+        // Sin data (offline): conservar lo sembrado desde cache
+        setLoading(false);
+      })
+      .then(undefined, () => {
+        // La query lanzó (algunos errores de red rechazan en vez de resolver):
+        // no pisar el cache ya sembrado; solo destrabar el loading.
         setLoading(false);
       });
   }, [user]);
