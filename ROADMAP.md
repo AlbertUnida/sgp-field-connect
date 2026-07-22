@@ -1,6 +1,6 @@
 # ROADMAP — SGP Field Connect
 
-Documento de traspaso y mejoras futuras. Última actualización: 2026-07-21.
+Documento de traspaso y mejoras futuras. Última actualización: 2026-07-22.
 **Para el asistente que retome este proyecto: leé primero `CLAUDE.md` (contexto técnico, reglas de trabajo, estado de sesión) y después este archivo (qué construir a continuación).**
 
 ---
@@ -18,6 +18,13 @@ Documento de traspaso y mejoras futuras. Última actualización: 2026-07-21.
 1. **Setup de web push — HECHO (2026-07-10), falta probar en campo.** Ya está todo configurado: tabla `push_suscripciones` + RLS creada en Supabase (migración `supabase/migrations/20260710120000_push_suscripciones.sql`); extensiones `pg_cron` y `pg_net` habilitadas; secrets VAPID + CRON_SECRET cargados (`npx supabase secrets set`); Edge Function `enviar-alertas` deployada; cron `alertas-diarias` activo (jobid 1, `0 11 * * *` = 8am Paraguay); `VITE_VAPID_PUBLIC_KEY` en `.env.local` y en Vercel (Production) con redeploy hecho. **Claves VAPID definitivas: pública `BHOLK0a7kYaBQCgLUdVIbc_HAiBA0zUC2iUBxBA08N8aWHrWB3uU5NHdsmuSanT7IZcAyZiMjKA8hArRa-EtVYg`** (la privada y el CRON_SECRET viven solo en los secrets de Supabase). **Falta:** prueba real — activar desde Perfil → Notificaciones en el celular y disparar la función a mano (`curl.exe -X POST https://sdvhtupgzpchhejxrowg.supabase.co/functions/v1/enviar-alertas -H "Authorization: Bearer <CRON_SECRET>"`); requiere al menos un cliente con visita vencida. Pendiente commitear la migración (ver abajo).
 2. **Verificar commits pendientes** — correr `git status`; puede haber quedado sin commitear el último lote (push, Perfil, sw.js, ROADMAP.md, claude.md).
 3. **Prueba de campo del modo offline** — en el teléfono contra Vercel: abrir con conexión (instala SW v3), modo avión, registrar desde Registrar y desde la bitácora de un cliente, reconectar, verificar sync y foto.
+
+## Hecho 2026-07-22
+
+- ✅ **RLS hardening Camino B** (migración `20260722120000`, corrida en Supabase): apretadas las escrituras de gestiones/eventos/catálogo de eventos. Camino A (cerrar SELECT) sigue diferido (ver ítem 18).
+- ✅ **Fix modo offline**: Error Boundary global (evita pantalla blanca al fallar un render sin señal) + cache de perfil en `useProfile` + fallback robusto en `Registrar`. El registro offline por cola ya funcionaba; navegar otras pantallas offline sigue sin cache (por diseño).
+- ✅ **Georreferenciación + Monitoreo** (sin migración; `clientes.lat/lng` ya existían): carga manual de coordenadas en `EditarCliente` (managers, mapa Leaflet + pegar + GPS), auto-fijar en la 1ra visita (`lib/georef.ts`), pantalla de cobertura `/app/georreferenciacion`, y pines de clientes en Monitoreo (toggle).
+- 📋 **Plan del rediseño de VISITAS** documentado en `PLAN-flujo-visitas.md` (geofence 100m consciente de precisión, iniciar/cerrar con duración, recordatorios push, importador de coords vía `codigo_crm` atado al cutover). Pendiente de implementar (Fases 2+).
 
 ## Mejoras futuras (orden de impacto sugerido)
 

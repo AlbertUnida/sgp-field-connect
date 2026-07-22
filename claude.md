@@ -1,7 +1,7 @@
 # CLAUDE.md — SGP Field Connect
 
 Guía para Claude al trabajar en este repositorio.
-Última actualización: 2026-07-21
+Última actualización: 2026-07-22
 
 ---
 
@@ -71,6 +71,7 @@ Admin
 - **`Monitoreo.tsx`** — Solo admin/supervisor. Feed de gestiones en tiempo real (Supabase Realtime) + mapa Leaflet con pins de visitas y posición en vivo de ejecutivos (`ubicaciones_ejecutivos`, vigencia 15 min). Filtro multi-select por ejecutivo, selector de fecha. Ancho completo en desktop (ver `RUTAS_ANCHAS` en AppLayout).
 - **`Inicio.tsx`** — Dashboard: KPIs del mes, alertas rápidas.
 - **`RutaDia.tsx`** — Ruta del día (`/app/ruta`, todos los roles): visitas pendientes de la cartera propia ordenadas por cercanía GPS, con link a Google Maps.
+- **`Georreferenciacion.tsx`** — `/app/georreferenciacion` (menú +, `canManage`): cobertura de ubicaciones (% con/sin `lat/lng`) y lista buscable de clientes sin ubicación con link al editor. La carga de coordenadas vive en `EditarCliente` (sección "Coordenadas del local", mapa Leaflet + pegar `lat,lng` + GPS).
 
 ### Modelo de datos clave
 
@@ -142,6 +143,7 @@ Hook `useProfile` expone: `isAdmin`, `isSupervisor`, `canManage` (admin OR super
 | `src/lib/supabaseClient.ts` | Cliente Supabase singleton |
 | `src/lib/offline-queue.ts` | Cola offline de gestiones en IndexedDB (`sgp-offline`). `encolarGestion`, `sincronizarPendientes`, `esErrorDeRed`. Sync automático vía `useOfflineSync` (AppLayout: al abrir, al evento `online` y cada 60s). Indicador Wifi/pendientes en AppHeader (`useOfflineEstado`). Integrado en Registrar, ClienteDetalle (bitácora) y EventoDetalle. Registrar cachea clientes y tipos_resultado en localStorage para funcionar sin señal desde cero. `public/sw.js` (v3) tiene fallback SPA: cualquier navegación offline sirve el shell cacheado |
 | `src/lib/utils.ts` | `cn()` helper de clases |
+| `src/lib/georef.ts` | `fijarUbicacionSiFalta()` — setea `clientes.lat/lng` desde el GPS de la 1ra visita si está NULL (no pisa). Usado en Registrar y EventoDetalle |
 
 ---
 
@@ -225,6 +227,24 @@ GIT_DIR=/tmp/tmp_check git log --oneline -5
 - `resultado_id: UUID || null` — NUNCA string vacío `""` (rompe Postgres).
 - `datos_extra: Object.keys(datosExtra).length > 0 ? datosExtra : null`
 - Score en datos_extra: siempre guardar junto con resultado_real.
+
+---
+
+## Estado de sesión 2026-07-22
+
+Sesión enfocada en **hardening de RLS**, **fix del modo offline** y **georreferenciación + Monitoreo**. Todo probado por el usuario y commiteado. Sintaxis validada (tsc completo no corre en el sandbox por timeout FUSE; en la máquina del usuario compila).
+
+**Hecho hoy (todo commiteado):**
+1. **RLS hardening Camino B** — migración `supabase/migrations/20260722120000_hardening_rls_escritura.sql` (ya corrida por el usuario en Supabase): `Registrar gestiones` fuerza `ejecutivo_id = auth.uid()` (anti-spoofing); se elimina `update_eventos_agenda` (USING true) y `eventos_update` pasa a permitir dueño del evento / dueño del cliente padre / manager; `manage_rubros_evento`/`manage_tipos_evento` restringidas a admin+supervisor. No tocó el SELECT (la app depende de lectura abierta). Camino A (cerrar SELECT) sigue pendiente/diferido.
+2. **Fix modo offline** — causa raíz: no había Error Boundary → una excepción de render sin señal desmontaba toda la app (pantalla blanca). Agregado `src/components/ErrorBoundary.tsx` (envuelve App en main.tsx); `useProfile` cachea el perfil en localStorage y resuelve offline; `Registrar.cargarClientes/cargarResultados` con try/catch + finally (fallback a cache aunque la query lance). El registro offline (cola IndexedDB) ya funcionaba; navegar otras pantallas offline sigue mostrando vacío (por diseño, solo Registrar cachea).
+3. **Georreferenciación + Monitoreo** (sin migración: `clientes.lat/lng` ya existían):
+   - `src/components/MapaUbicacionPicker.tsx` — picker Leaflet (pin arrastrable, click, sync externo).
+   - `EditarCliente.tsx` — sección "Coordenadas del local" (solo `canManage`): pegar `lat, lng`, botón GPS, mapa; guarda `clientes.lat/lng`.
+   - `src/lib/georef.ts` `fijarUbicacionSiFalta()` — la 1ra visita con GPS fija la ubicación del cliente, con guard `.is("lat", null)` (nunca pisa). Conectado en Registrar y EventoDetalle (solo `tipo==='visita'`; la bitácora inline de ClienteDetalle no captura GPS).
+   - `src/pages/Georreferenciacion.tsx` (`/app/georreferenciacion`, menú +, `canManage`): % de cobertura, contadores, lista buscable de clientes sin ubicación con link al editor.
+   - `Monitoreo.tsx` — toggle "Clientes": pines de clientes georreferenciados (teal local / ámbar venue).
+
+**Requerimiento grande PENDIENTE — rediseño del flujo de VISITAS** (documentado en `PLAN-flujo-visitas.md`, decisiones fijadas): geofence duro 100m (regla consciente de precisión: asentar GPS, `distancia − precisión > 100m`, piso 50m con flag baja_precision), iniciar/cerrar visita con duración (columna `estado_visita` + índice único parcial en `gestiones`; el resto de columnas ya existen), recordatorios web push (Edge Function + cron 5min), cerrar solo dentro de 100m. Importador de coordenadas: 3 sistemas (app visitas → CRM aparte por CRM-ID → SGP), conviene atarlo al cutover de cartera vía `clientes.codigo_crm`. Ver §11 del plan para las fases.
 
 ---
 
